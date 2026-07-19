@@ -1,103 +1,89 @@
 ---
 name: token-efficient-gates
-description: Audit and reduce agent input-token waste caused by verbose local non-interactive engineering commands. Use when Git hooks, pre-commit/pre-push, local verify or pre-merge scripts, test/lint/typecheck commands, tracked shell files, or package-script call chains flood agent terminal context; when output volume must be measured without forwarding raw logs; or when compact PASS/WARN/FAIL/SKIP summaries with recoverable diagnostics should be installed. Excludes remote CI runner minutes, billing, workflow scheduling, matrices, caches, and artifact economics.
+description: 'Capture and progressively inspect verbose output from agent-run local non-interactive engineering commands. Use whenever Git hooks reached through Git commands, local verify/CI/pre-merge scripts, test, lint, or typecheck commands would flood agent terminal context: passing runs should consume one summary line, while warning or failed runs should expose bounded line-number indexes into a recoverable log. Excludes remote CI runner minutes, billing, workflow scheduling, matrices, caches, and artifact economics.'
 ---
 
 # Token-Efficient Gates
 
-Reduce agent-facing verification output while preserving evidence and command semantics.
+Reduce output entering agent context, not verification coverage.
 
-## Keep the target separate
+## Preserve the original command
 
-Treat this skill repository as the source of reusable tooling, not as the target. Resolve and state the target repository before working.
+Treat the command as opaque by default. Do not split its stages, add or remove flags, replace its package script, or modify its hook merely to compact output.
 
-Choose one mode:
+Resolve the target repository and exact command first. If the command is already authorized and non-interactive, execute that same argv once through the capture helper. Capturing output does not authorize a push, deploy, migration, reset, seed, or other side effect.
 
-- **Audit**: inspect local gate call chains without executing them.
-- **Measure**: execute one verified-safe gate while redirecting all raw output away from agent context.
-- **Apply**: install compact output behavior in user-approved target files.
-
-Default to Audit. Do not turn inspection into Measure or Apply implicitly.
-
-## Audit local token surfaces
-
-1. Record the target root and `git status --short`.
-2. Run `scripts/audit.py --repo <target> --format json`.
-3. Follow `call_edges` from hooks, verify scripts, pre-merge scripts, and related package commands. Inspect only the chains relevant to recurring agent execution.
-4. Verify stage order, conditional behavior, warning behavior, fail-fast versus aggregate failure, exit codes, and signal handling from source.
-5. Treat `interactive`, `release-deploy`, `destructive-data`, and non-empty `safety_signals` as exclusion boundaries until manually resolved.
-6. Report output volume as unmeasured unless a captured log or Measure run provides evidence.
-7. Re-run `git status --short`. Audit mode must not change the target repository.
-
-The audit intentionally ignores `.github/workflows` and remote CI economics. A local command named `ci` remains in scope only as an agent-executed command surface.
-
-## Measure without spending context
-
-Measure only after verifying the complete call chain is non-interactive and does not deploy, publish, migrate, seed, reset, wipe, or write external state.
+## Capture agent-facing output
 
 ```bash
-python3 <skill-dir>/scripts/measure.py \
+python3 <skill-dir>/scripts/capture.py \
   --repo <target> \
-  --label pre-push \
-  -- <command> <arg>...
+  --label verify:ci \
+  -- pnpm verify:ci
 ```
 
-The helper invokes argv directly, writes combined stdout/stderr to a worktree-specific `latest.log` inside Git's internal path, and returns only JSON containing outcome, exit code, duration, line count, byte count, and log path. It does not interpret shell operators. Use `bash -lc` only when the reviewed command genuinely requires shell syntax.
+The helper stores combined stdout/stderr in a restrictive, worktree-specific `latest.log` under Git's internal path. It preserves the command exit status and signal behavior.
 
-Distinguish measurements:
+Consume its result economically:
 
-- `output_bytes` and `output_lines` are measured terminal output.
-- Agent tool-output tokens are known only when the harness reports them.
-- Model input tokens are known only when the model/harness reports them.
+- `PASS`: stop. Do not locate or read the log. The log path is intentionally omitted.
+- `WARN`: use the returned log path and `L<number>` index. Read only the indexed neighborhood.
+- `FAIL`: use the returned log path and bounded index. Do not stream the whole log back into context.
+- `ERROR`: fix the capture invocation or environment; the target command may not have run.
 
-Do not invent a byte-to-token conversion. Use line/byte reduction as a directional proxy unless token counts are directly observed.
-
-Inspect diagnostics progressively with targeted `rg`, `tail`, or stage-specific reads. Do not stream the entire measurement log back into agent context.
-
-## Report the opportunity
-
-Use a compact evidence-first report:
+A failure returns at most five high-confidence diagnostic candidates:
 
 ```text
-Target: <absolute path>
-Mode: audit | measure
-
-Recurring gate
-- Entry point: <path or package script>
-- Verified stages: <ordered call chain>
-- Current output: <measured lines/bytes/tool tokens, or unmeasured>
-- Semantics to preserve: <warnings, exit, signal, fail-fast/aggregate>
-
-Recommendation
-- Compact: <approved non-interactive stages>
-- Keep verbose: <interactive or diagnostic commands>
-- Do not run: <release/deploy/migration/destructive paths>
+[verify:ci] FAIL (exit 1, 7.013s) — log: <absolute-path>/latest.log
+[verify:ci] INDEX L184: src/check.ts:14:3 error TS2322: wrong type
 ```
 
-Lead with the highest recurring agent-context cost. Do not enumerate unrelated repository scripts.
+If no stable marker is found, the index provides a bounded tail range such as `inspect L716-L735` without printing those lines.
 
-## Apply an approved change
+## Preserve meaningful exit-zero warnings
 
-1. List the exact target files and mechanically record the before-stage sequence.
-2. Copy `assets/token-gate.sh` into the target repository, normally under a tracked `tools/` directory. Never reference this skills repository at target runtime.
-3. Source the copied asset from approved non-interactive entry points.
-4. Wrap one existing command per `token_gate_stage`, preserving command arguments and order verbatim.
-5. Use `--warn-regex` only with a narrow warning marker verified for that stage.
-6. Preserve existing fail-fast or aggregate-failure behavior. Do not add parallelism, retries, skips, or reordering as part of output compaction.
-7. Compare before/after stages mechanically, run representative safe fixtures, verify logs, and confirm clean `git status` after gate execution.
-
-Example fail-fast gate:
+Most exit-zero commands need no log inspection. Some gates encode a meaningful warning only in output. After verifying a narrow stable marker for that command, pass it explicitly:
 
 ```bash
-repo_root=$(git rev-parse --show-toplevel) || exit $?
-source "$repo_root/tools/token-gate.sh"
-token_gate_begin pre-push || exit $?
-token_gate_stage typecheck -- pnpm typecheck || exit $?
-token_gate_stage --warn-regex 'verified warning marker' spec:vocab -- pnpm spec:vocab || exit $?
-token_gate_finish
+python3 <skill-dir>/scripts/capture.py \
+  --repo <target> \
+  --label spec:vocab \
+  --warn-regex '^⚠ spec:vocab' \
+  -- pnpm spec:vocab
 ```
 
-Read [references/output-economics.md](references/output-economics.md) before designing warning detection, diagnostics, measurement claims, or log retention.
+Do not use a universal `warning|warn` detector. False warning matches make agents read successful logs and recreate the token waste this skill exists to prevent.
+
+## Read diagnostics progressively
+
+For each returned index line:
+
+1. Read a small range around that line with `sed -n` or an equivalent bounded reader.
+2. Search for one specific filename, test, error code, or marker with bounded `rg` output.
+3. Expand to a larger stage or tail range only when the first evidence is insufficient.
+4. Read the complete log only as a last resort.
+
+Logs may contain credentials, headers, environment dumps, connection strings, or user data. Do not quote or upload them wholesale.
+
+Read [references/output-economics.md](references/output-economics.md) for index behavior, warning detection, and log safety.
+
+## Audit when execution safety is unclear
+
+Run `scripts/audit.py --repo <target> --format json` before capture when the call chain is unknown. Inspect stage order, conditions, interactive behavior, and side effects without executing the target command.
+
+Do not run deploy, release, migration, seed, wipe, DB reset, E2E infrastructure, or external-write commands merely to measure or compact their output. If the user independently authorized such a command, capture changes only how the agent consumes its output.
+
+## Measure economics separately
+
+Use `scripts/measure.py` only when comparing line and byte volume. Its JSON output is measurement evidence, not the normal agent execution interface.
+
+Terminal bytes, tool-output tokens, and model input tokens are different measurements. Claim only the quantity actually observed.
+
+## Modify a target only by explicit request
+
+The normal workflow changes no tracked target file. Install or edit a repo-local hook or gate only when the user explicitly requests persistent compact behavior for callers that cannot use `capture.py`.
+
+When applying a persistent adapter, preserve stage order, conditions, exit codes, signals, and fail-fast or aggregate-failure behavior. Never make the target repository depend on this skills repository at runtime.
 
 ## Stop at the remote boundary
 

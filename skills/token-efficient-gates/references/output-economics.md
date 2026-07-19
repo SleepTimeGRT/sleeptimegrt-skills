@@ -2,57 +2,47 @@
 
 ## Economic target
 
-Optimize repeated output that enters an agent's context, not the amount of verification performed. A passing gate should usually emit one summary line per stage plus a final result. Complete diagnostics should remain available outside the immediate tool response.
+Optimize repeated output that enters an agent's context, not the amount of verification performed. Keep the original command and arguments intact. Redirect complete stdout/stderr to a recoverable log before the terminal tool can forward it to the model.
 
-Do not claim token savings from line or byte counts alone. Terminal bytes, tool-output tokens, and model input tokens are different measurements. State which one was observed.
+The default consumption contract is asymmetric:
 
-## Preserve the verification contract
+- A passing command costs one summary line and no log read.
+- A warning or failed command costs one summary plus a small diagnostic index.
+- Additional context is purchased only when an indexed read is necessary.
 
-Before compacting, verify:
+Do not claim token savings from line or byte counts alone. Terminal bytes, tool-output tokens, and model input tokens are different measurements.
 
-1. Entrypoints and nested commands.
-2. Stage order and conditional execution.
-3. Fail-fast versus continue-and-summarize behavior.
-4. Exit codes and signals.
-5. Successful commands that emit meaningful warnings.
-6. Existing skips and their reasons.
+## Failure index
 
-Output refactoring must not remove stages, introduce retries or parallelism, or turn warnings into passes.
+`scripts/capture.py` scans a failed log outside model context and returns at most five high-confidence candidates. Each candidate contains:
 
-## Compact only non-interactive gates
+- the exact one-based log line number;
+- a single whitespace-normalized diagnostic snippet;
+- at most 180 characters.
 
-Suitable surfaces include pre-push hooks, local verify commands, deterministic lint/typecheck/test stages, and merge gates an agent runs repeatedly.
+The generic detector covers common error, fatal, panic, exception, failed, TAP `not ok`, and failure-symbol markers. It is a navigation aid, not a diagnosis. If it finds no candidate, it returns only the final 20-line range to inspect.
 
-Keep development servers, watch mode, debuggers, deploy/release commands, migrations, destructive data commands, and manual diagnostic commands verbose. Their output is part of their interface or their execution is unsafe to perform merely for measurement.
+Use the index to make bounded reads such as:
 
-## Reveal diagnostics progressively
+```bash
+sed -n '174,194p' '<log-path>'
+rg -n -m 10 'TS2322|src/check\.ts' '<log-path>'
+```
 
-Use this order after `WARN` or `FAIL`:
+Do not automatically print the indexed neighborhood. A line number is cheap; its surrounding diagnostics should enter context only when the agent needs them.
 
-1. Read the one-line stage summary.
-2. Search the log for error markers or filenames with bounded `rg` output.
-3. Read a bounded tail or the relevant stage section.
-4. Read the full log only when narrower evidence is insufficient.
+## Exit-zero warnings
 
-This preserves context for reasoning instead of spending it on successful progress output.
+An exit code of zero normally ends consumption immediately. When a specific command is verified to emit actionable warnings while returning zero, pass a narrow `--warn-regex`. Matching warning lines become the index.
 
-## Detect warnings narrowly
+Do not use a universal `warning|warn` pattern. Test names, dependency summaries, and statements such as `0 failed` commonly create false positives.
 
-Do not use a universal `warning|warn` pattern. Capture a verified clean success and warning success, then select the narrow stable marker for that tool. Prefer structured output or a documented warning status when available.
+## Log lifecycle and safety
 
-## Store logs safely
+The capture helper derives its path through Git so logs remain untracked and linked worktrees are isolated. It keeps one `latest.log` per label, creates it with restrictive permissions, and does not print its path on success.
 
-Use Git-derived internal paths so logs are untracked and linked worktrees remain isolated. Keep one `latest.log` per entry point instead of accumulating timestamps, create it with restrictive permissions, and print a stable absolute path.
+Logs can contain credentials, headers, environment dumps, connection strings, or user data. Review output risk before capture, never upload logs automatically, and quote only the bounded evidence required for diagnosis.
 
-Logs can contain credentials, headers, environment dumps, connection strings, or user data. Review command output risk before persisting or sharing a log. Never upload full logs automatically.
+## Persistent repository adapters
 
-## Runner API
-
-`assets/token-gate.sh` provides:
-
-- `token_gate_begin ENTRYPOINT`
-- `token_gate_stage [--warn-regex REGEX] STAGE -- COMMAND...`
-- `token_gate_skip STAGE REASON`
-- `token_gate_finish`
-
-`token_gate_finish` returns `1` when an aggregate gate continued after failures. Commands returning the shell convention `128 + signal` cause the runner to print the failure and re-raise that signal.
+Agent-side capture is the default because it requires no target mutation and cannot change verification stages. A repo-local adapter is a secondary option for callers that cannot intercept the command output. Install one only by explicit request and mechanically verify the original stage, exit, signal, and conditional behavior.

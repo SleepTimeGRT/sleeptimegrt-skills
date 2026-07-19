@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import shlex
 import stat
 import subprocess
 import tempfile
@@ -12,6 +13,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 AUDIT = ROOT / "skills" / "token-efficient-gates" / "scripts" / "audit.py"
+CAPTURE = ROOT / "skills" / "token-efficient-gates" / "scripts" / "capture.py"
 MEASURE = ROOT / "skills" / "token-efficient-gates" / "scripts" / "measure.py"
 RUNNER = ROOT / "skills" / "token-efficient-gates" / "assets" / "token-gate.sh"
 
@@ -164,6 +166,70 @@ class RunnerTests(GitFixture):
         )
         return run("bash", str(script), cwd=self.repo, check=False)
 
+    def run_capture(self, command: str, *options: str) -> subprocess.CompletedProcess[str]:
+        script = self.write(
+            "run-capture.sh",
+            f"""
+            #!/usr/bin/env bash
+            set -u
+            source {json.dumps(str(RUNNER))}
+            token_gate_capture {' '.join(options)} verify -- bash -c {shlex.quote(command)}
+            """,
+            True,
+        )
+        return run("bash", str(script), cwd=self.repo, check=False)
+
+    def capture_log(self) -> Path:
+        git_dir = Path(run("git", "rev-parse", "--git-dir", cwd=self.repo).stdout.strip())
+        if not git_dir.is_absolute():
+            git_dir = self.repo / git_dir
+        return git_dir / "token-gates" / "verify" / "latest.log"
+
+    def test_whole_command_capture_hides_success_log_path(self) -> None:
+        result = self.run_capture("printf 'noisy-success\\n%.0s' {1..100}")
+
+        self.assertEqual(result.returncode, 0)
+        self.assertRegex(result.stdout, r"^\[verify\] PASS \([0-9]+s\)\n$")
+        self.assertNotIn("log:", result.stdout)
+        self.assertNotIn("noisy-success", result.stdout)
+        self.assertEqual(self.capture_log().read_text(encoding="utf-8").count("noisy-success"), 100)
+
+    def test_whole_command_failure_returns_bounded_line_index(self) -> None:
+        result = self.run_capture(
+            "printf 'progress-%s\\n' {1..30}; "
+            "echo 'src/check.ts:14:3 error TS2322: wrong type'; "
+            "printf 'after-%s\\n' {1..20}; exit 19"
+        )
+
+        self.assertEqual(result.returncode, 19)
+        lines = result.stdout.splitlines()
+        self.assertRegex(lines[0], r"^\[verify\] FAIL \(exit 19, [0-9]+s\) — log: .+/latest\.log$")
+        self.assertEqual(lines[1], "[verify] INDEX L31: src/check.ts:14:3 error TS2322: wrong type")
+        self.assertEqual(len(lines), 2)
+
+    def test_whole_command_warning_uses_explicit_detector(self) -> None:
+        result = self.run_capture("echo 'NOTICE quota nearing limit'", "--warn-regex", "'^NOTICE '")
+
+        self.assertEqual(result.returncode, 0)
+        self.assertRegex(result.stdout.splitlines()[0], r"^\[verify\] WARN \([0-9]+s\) — log: .+/latest\.log$")
+        self.assertEqual(result.stdout.splitlines()[1], "[verify] INDEX L1: NOTICE quota nearing limit")
+
+    def test_whole_command_failure_without_marker_points_to_tail(self) -> None:
+        result = self.run_capture("printf 'opaque-%s\\n' {1..37}; exit 2")
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("[verify] INDEX no high-confidence marker; inspect L18-L37", result.stdout)
+        self.assertNotIn("opaque-37", result.stdout)
+
+    def test_whole_command_capture_re_raises_signal(self) -> None:
+        result = self.run_capture("kill -TERM $$")
+
+        self.assertEqual(result.returncode, -15)
+        self.assertRegex(
+            result.stdout.splitlines()[0],
+            r"^\[verify\] FAIL \(signal (?:TERM|15), [0-9]+s\) — log: .+/latest\.log$",
+        )
+
     def test_runner_compacts_pass_warn_and_fail_while_preserving_diagnostics(self) -> None:
         result = self.run_gate(
             """
@@ -290,6 +356,90 @@ class MeasureTests(GitFixture):
         self.assertIn("line-100", log_path.read_text(encoding="utf-8"))
         after = run("git", "status", "--porcelain=v1", cwd=self.repo).stdout
         self.assertEqual(after, before)
+
+
+class CaptureTests(GitFixture):
+    def capture(self, command: str, *options: str) -> subprocess.CompletedProcess[str]:
+        return run(
+            "python3",
+            str(CAPTURE),
+            "--repo",
+            str(self.repo),
+            "--label",
+            "verify:ci",
+            *options,
+            "--",
+            "bash",
+            "-c",
+            command,
+            cwd=self.repo,
+            check=False,
+        )
+
+    def capture_log(self) -> Path:
+        git_dir = Path(run("git", "rev-parse", "--git-dir", cwd=self.repo).stdout.strip())
+        if not git_dir.is_absolute():
+            git_dir = self.repo / git_dir
+        return git_dir / "token-gates" / "capture" / "verify_ci" / "latest.log"
+
+    def test_success_prints_one_summary_line_without_log_path(self) -> None:
+        result = self.capture("printf 'noisy-success\\n%.0s' {1..100}")
+
+        self.assertEqual(result.returncode, 0)
+        self.assertRegex(result.stdout, r"^\[verify:ci\] PASS \([0-9.]+s\)\n$")
+        self.assertNotIn("log:", result.stdout)
+        self.assertNotIn("noisy-success", result.stdout)
+        log = self.capture_log()
+        self.assertEqual(stat.S_IMODE(log.stat().st_mode), 0o600)
+        self.assertEqual(log.read_text(encoding="utf-8").count("noisy-success"), 100)
+
+    def test_failure_prints_log_path_and_bounded_line_index(self) -> None:
+        result = self.capture(
+            "printf 'progress-%s\\n' {1..30}; "
+            "echo 'src/check.ts:14:3 error TS2322: wrong type'; "
+            "printf 'after-%s\\n' {1..20}; exit 19"
+        )
+
+        self.assertEqual(result.returncode, 19)
+        lines = result.stdout.splitlines()
+        self.assertRegex(lines[0], r"^\[verify:ci\] FAIL \(exit 19, [0-9.]+s\) — log: .+/latest\.log$")
+        self.assertEqual(lines[1], "[verify:ci] INDEX L31: src/check.ts:14:3 error TS2322: wrong type")
+        self.assertEqual(len(lines), 2)
+        self.assertNotIn("progress-1", result.stdout)
+
+    def test_failure_index_is_bounded(self) -> None:
+        result = self.capture("for n in {1..20}; do echo \"error: problem-$n\"; done; exit 1")
+
+        index_lines = [line for line in result.stdout.splitlines() if " INDEX " in line]
+        self.assertEqual(len(index_lines), 5)
+        self.assertIn("L1: error: problem-1", index_lines[0])
+        self.assertIn("L5: error: problem-5", index_lines[-1])
+        self.assertNotIn("problem-6", result.stdout)
+
+    def test_failure_without_marker_points_to_bounded_tail_range(self) -> None:
+        result = self.capture("printf 'opaque-%s\\n' {1..37}; exit 2")
+
+        self.assertIn("[verify:ci] INDEX no high-confidence marker; inspect L18-L37", result.stdout)
+        self.assertNotIn("opaque-37", result.stdout)
+
+    def test_zero_exit_warning_uses_explicit_detector_and_index(self) -> None:
+        result = self.capture("echo 'NOTICE quota nearing limit'", "--warn-regex", "^NOTICE ")
+
+        self.assertEqual(result.returncode, 0)
+        self.assertRegex(
+            result.stdout.splitlines()[0],
+            r"^\[verify:ci\] WARN \([0-9.]+s\) — log: .+/latest\.log$",
+        )
+        self.assertEqual(result.stdout.splitlines()[1], "[verify:ci] INDEX L1: NOTICE quota nearing limit")
+
+    def test_signal_termination_is_reported_and_re_raised(self) -> None:
+        result = self.capture("kill -TERM $$")
+
+        self.assertEqual(result.returncode, -15)
+        self.assertRegex(
+            result.stdout.splitlines()[0],
+            r"^\[verify:ci\] FAIL \(signal (?:TERM|15), [0-9.]+s\) — log: .+/latest\.log$",
+        )
 
 
 if __name__ == "__main__":

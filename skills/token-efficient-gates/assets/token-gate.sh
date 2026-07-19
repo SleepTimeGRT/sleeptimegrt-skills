@@ -38,6 +38,98 @@ token_gate_begin() {
   export TOKEN_GATE_NAME TOKEN_GATE_LOG TOKEN_GATE_LOG_DIR
 }
 
+_token_gate_print_index() {
+  token_gate_index_pattern=$1
+  token_gate_index_ignore_case=$2
+  if [ "$token_gate_index_ignore_case" -eq 1 ]; then
+    token_gate_index_matches=$(LC_ALL=C grep -Ein -m 5 -- "$token_gate_index_pattern" "$TOKEN_GATE_LOG" || true)
+  else
+    token_gate_index_matches=$(LC_ALL=C grep -En -m 5 -- "$token_gate_index_pattern" "$TOKEN_GATE_LOG" || true)
+  fi
+
+  if [ -n "$token_gate_index_matches" ]; then
+    printf '%s\n' "$token_gate_index_matches" | awk -v label="$TOKEN_GATE_NAME" '
+      {
+        separator = index($0, ":")
+        line_number = substr($0, 1, separator - 1)
+        detail = substr($0, separator + 1)
+        gsub(/\033\[[0-9;?]*[ -\/]*[@-~]/, "", detail)
+        gsub(/\r/, " ", detail)
+        gsub(/[[:space:]]+/, " ", detail)
+        sub(/^ /, "", detail)
+        sub(/ $/, "", detail)
+        if (length(detail) > 180) detail = substr(detail, 1, 179) "…"
+        printf "[%s] INDEX L%s: %s\n", label, line_number, detail
+      }
+    '
+    return 0
+  fi
+
+  token_gate_index_lines=$(awk 'END { print NR + 0 }' "$TOKEN_GATE_LOG")
+  if [ "$token_gate_index_lines" -eq 0 ]; then
+    printf '[%s] INDEX log is empty\n' "$TOKEN_GATE_NAME"
+    return 0
+  fi
+  token_gate_index_start=$((token_gate_index_lines - 19))
+  [ "$token_gate_index_start" -lt 1 ] && token_gate_index_start=1
+  printf '[%s] INDEX no high-confidence marker; inspect L%s-L%s\n' \
+    "$TOKEN_GATE_NAME" "$token_gate_index_start" "$token_gate_index_lines"
+}
+
+token_gate_capture() {
+  token_gate_capture_warn_regex=
+  if [ "${1-}" = "--warn-regex" ]; then
+    if [ "$#" -lt 5 ]; then
+      printf '%s\n' "token_gate_capture: --warn-regex requires a pattern, entrypoint, and command" >&2
+      return 64
+    fi
+    token_gate_capture_warn_regex=$2
+    shift 2
+  fi
+  if [ "$#" -lt 3 ] || [ "${2-}" != "--" ]; then
+    printf '%s\n' "token_gate_capture: expected [--warn-regex REGEX] ENTRYPOINT -- COMMAND..." >&2
+    return 64
+  fi
+  token_gate_capture_name=$1
+  shift 2
+
+  token_gate_begin "$token_gate_capture_name" || return $?
+  token_gate_capture_start=$SECONDS
+  if "$@" >"$TOKEN_GATE_LOG" 2>&1; then
+    token_gate_capture_status=0
+  else
+    token_gate_capture_status=$?
+  fi
+  token_gate_capture_elapsed=$((SECONDS - token_gate_capture_start))
+
+  if [ "$token_gate_capture_status" -eq 0 ]; then
+    if [ -n "$token_gate_capture_warn_regex" ] &&
+      LC_ALL=C grep -E -q -- "$token_gate_capture_warn_regex" "$TOKEN_GATE_LOG"; then
+      printf '[%s] WARN (%ss) — log: %s\n' "$TOKEN_GATE_NAME" "$token_gate_capture_elapsed" "$TOKEN_GATE_LOG"
+      _token_gate_print_index "$token_gate_capture_warn_regex" 0
+    else
+      printf '[%s] PASS (%ss)\n' "$TOKEN_GATE_NAME" "$token_gate_capture_elapsed"
+    fi
+    return 0
+  fi
+
+  token_gate_failure_pattern='(^|[[:space:]:])(error(\[[^]]+\])?|fatal|panic|exception|failed)([[:space:]:]|$)|^not ok([[:space:]]|$)|(^|[[:space:]])(✗|×)[[:space:]]'
+  if [ "$token_gate_capture_status" -gt 128 ] && [ "$token_gate_capture_status" -le 192 ]; then
+    token_gate_capture_signal_number=$((token_gate_capture_status - 128))
+    token_gate_capture_signal_name=$(kill -l "$token_gate_capture_signal_number" 2>/dev/null || printf '%s' "$token_gate_capture_signal_number")
+    printf '[%s] FAIL (signal %s, %ss) — log: %s\n' \
+      "$TOKEN_GATE_NAME" "$token_gate_capture_signal_name" "$token_gate_capture_elapsed" "$TOKEN_GATE_LOG"
+    _token_gate_print_index "$token_gate_failure_pattern" 1
+    kill -"$token_gate_capture_signal_number" "$$"
+    return "$token_gate_capture_status"
+  fi
+
+  printf '[%s] FAIL (exit %s, %ss) — log: %s\n' \
+    "$TOKEN_GATE_NAME" "$token_gate_capture_status" "$token_gate_capture_elapsed" "$TOKEN_GATE_LOG"
+  _token_gate_print_index "$token_gate_failure_pattern" 1
+  return "$token_gate_capture_status"
+}
+
 token_gate_stage() {
   token_gate_warn_regex=
   if [ "${1-}" = "--warn-regex" ]; then

@@ -15,20 +15,23 @@ Do not reintroduce GitHub Actions minutes, runner billing, workflow scheduling, 
 
 `skills/token-efficient-gates/` exists and contains:
 
-- `SKILL.md` — Audit, Measure, and Apply workflow.
+- `SKILL.md` — capture-first agent consumption workflow, with Audit and Measure as supporting modes.
 - `scripts/audit.py` — read-only tracked hook/shell/package inventory and local call edges. It intentionally ignores `.github/workflows`.
+- `scripts/capture.py` — executes the original command unchanged, keeps passing output out of agent context, and returns bounded line-number indexes for warnings or failures.
 - `scripts/measure.py` — executes one already-reviewed safe command while redirecting raw output to a worktree-specific `latest.log`; terminal output is one JSON summary.
-- `assets/token-gate.sh` — standalone repo-local compact runner.
+- `assets/token-gate.sh` — optional standalone repo-local compact runner for explicitly requested persistent adaptations.
 - `references/output-economics.md` — measurement provenance, progressive diagnostics, warning, and log guidance.
 - `agents/openai.yaml` — UI metadata.
 
-`tests/test_token_efficient_gates.py` contains eight fixture tests. The suite and official `quick_validate.py` passed on 2026-07-19.
+`tests/test_token_efficient_gates.py` contains nineteen fixture tests. The suite and official `quick_validate.py` passed on 2026-07-20.
 
 The obsolete `skills/quiet-gates/` folder was removed after the replacement passed.
 
 ## Objective
 
-Reduce repeated terminal output that enters agent context without reducing verification coverage.
+Reduce repeated terminal output that enters agent context without reducing verification coverage or changing the command being run.
+
+The normal solution is agent-side capture, not rewriting `verify`, `verify:ci`, package scripts, or hooks. Preserve the original command and arguments as one opaque invocation. Successful runs return one summary line and require no log read. Warning or failed runs return a bounded `L<number>` diagnostic index into a restrictive Git-internal log.
 
 Target local surfaces:
 
@@ -40,9 +43,11 @@ Target local surfaces:
 Desired non-interactive output:
 
 ```text
-[verify] PASS typecheck (4s)
-[verify] WARN spec:vocab (1s) — log: <path>
-[verify] FAIL test:unit (exit 1, 7s) — log: <path>
+[verify:ci] PASS (4s)
+[verify:ci] WARN (1s) — log: <path>
+[verify:ci] INDEX L33: <bounded warning marker>
+[verify:ci] FAIL (exit 1, 7s) — log: <path>
+[verify:ci] INDEX L184: <bounded failure marker>
 ```
 
 Full diagnostics remain available in a bounded, restrictive, worktree-safe log. Interactive development, deploy, release, migration, destructive data, and external-write commands are exclusion boundaries rather than compaction targets.
@@ -85,7 +90,33 @@ Use these as explicit read-only targets before applying changes:
 
 “All repositories have the same problem” remains false based on the pilots. Inventory before proposing mutations.
 
+## toss-samhaengsi pilot applied
+
+On 2026-07-20 the user explicitly approved a persistent first pilot in `/Users/minchul/Projects/toss-samhaengsi`.
+
+- Added `tools/token-gate.sh` as a target-local copy of the skill asset.
+- Wrapped `.githooks/pre-push` with one whole-command capture and a recursion guard; the original five commands remain verbatim and in the same order.
+- Added only the verified `^⚠ spec:vocab` exit-zero warning detector.
+- Updated `AGENTS.md` with the capture/index behavior.
+- Actual safe pre-push run: exit 0, `WARN`, two agent-facing lines, 267 bytes, 84 exact `o200k_base` tokens.
+- Previous baseline for the same hook: 7,425 lines and 79,487 exact `o200k_base` tokens. The pilot log remains 7,425 lines and preserves all five stage markers plus final OK.
+- Controlled failure fixture: original exit 19 preserved, raw failure hidden, exact failure candidate returned as `INDEX L8`.
+- Log mode verified as `0600`; shell syntax, copied-asset equality, `git diff --check`, nineteen skill fixture tests, and official skill validation passed.
+
+The target pilot changes are `.githooks/pre-push`, `AGENTS.md`, and `tools/token-gate.sh`.
+
 ## Runner contract
+
+The primary `scripts/capture.py` contract is:
+
+- Run the exact original argv once without stage decomposition or flag changes.
+- On `PASS`, print one summary line without a log path; the agent stops reading.
+- On `WARN` or `FAIL`, print the log path and at most five indexed diagnostic candidates with exact one-based line numbers.
+- If no failure marker matches, print only the final 20-line range to inspect.
+- Detect exit-zero warnings only through an explicitly supplied narrow `--warn-regex`.
+- Preserve the original exit code and re-raise terminating signals.
+
+The optional repo-local asset retains this persistent-adapter contract:
 
 - One summary line per completed stage plus a final result.
 - Preserve `PASS`, `WARN`, `FAIL`, and `SKIP` distinctly.
@@ -109,9 +140,9 @@ Use these as explicit read-only targets before applying changes:
 
 Focus on the first skill:
 
-1. Run the new compact audit against the three pilot repositories.
-2. Review the resulting local gate call chains without running them.
-3. Prepare a proposed `toss-samhaengsi` pre-push adaptation, but do not modify that repository without explicit approval.
+1. Re-run the three pilot commands through `scripts/capture.py` without changing their flags or target files.
+2. Verify that passing runs stop after one summary line and realistic failures yield useful bounded indexes.
+3. Do not prepare target hook or package-script adaptations unless explicitly requested.
 4. Forward-test realistic trigger prompts when authorized; no subagent validation has been run yet.
 
 Only after the first skill is accepted should a separately initialized remote CI budget economics skill be designed.
