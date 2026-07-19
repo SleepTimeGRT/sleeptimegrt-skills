@@ -18,7 +18,12 @@ MEASURE = ROOT / "skills" / "token-efficient-gates" / "scripts" / "measure.py"
 RUNNER = ROOT / "skills" / "token-efficient-gates" / "assets" / "token-gate.sh"
 
 
-def run(*args: str, cwd: Path, check: bool = True) -> subprocess.CompletedProcess[str]:
+def run(
+    *args: str,
+    cwd: Path,
+    check: bool = True,
+    env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         args,
         cwd=cwd,
@@ -26,7 +31,13 @@ def run(*args: str, cwd: Path, check: bool = True) -> subprocess.CompletedProces
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
+        env=env,
     )
+
+
+def retained_log(stdout: str) -> Path:
+    line = next(line for line in stdout.splitlines() if "log:" in line)
+    return Path(line.split(" — log: ", 1)[1])
 
 
 class GitFixture(unittest.TestCase):
@@ -151,6 +162,16 @@ class AuditTests(GitFixture):
 
 
 class RunnerTests(GitFixture):
+    def setUp(self) -> None:
+        super().setUp()
+        self.runtime_tmp = (Path(self.tempdir.name) / "runtime tmp").resolve()
+        self.runtime_tmp.mkdir(mode=0o700)
+
+    def runtime_env(self) -> dict[str, str]:
+        env = os.environ.copy()
+        env["TMPDIR"] = str(self.runtime_tmp)
+        return env
+
     def run_gate(self, body: str) -> subprocess.CompletedProcess[str]:
         script = self.write(
             "run-gate.sh",
@@ -164,7 +185,7 @@ class RunnerTests(GitFixture):
             """,
             True,
         )
-        return run("bash", str(script), cwd=self.repo, check=False)
+        return run("bash", str(script), cwd=self.repo, check=False, env=self.runtime_env())
 
     def run_capture(self, command: str, *options: str) -> subprocess.CompletedProcess[str]:
         script = self.write(
@@ -177,13 +198,7 @@ class RunnerTests(GitFixture):
             """,
             True,
         )
-        return run("bash", str(script), cwd=self.repo, check=False)
-
-    def capture_log(self) -> Path:
-        git_dir = Path(run("git", "rev-parse", "--git-dir", cwd=self.repo).stdout.strip())
-        if not git_dir.is_absolute():
-            git_dir = self.repo / git_dir
-        return git_dir / "token-gates" / "verify" / "latest.log"
+        return run("bash", str(script), cwd=self.repo, check=False, env=self.runtime_env())
 
     def test_whole_command_capture_hides_success_log_path(self) -> None:
         result = self.run_capture("printf 'noisy-success\\n%.0s' {1..100}")
@@ -192,7 +207,8 @@ class RunnerTests(GitFixture):
         self.assertRegex(result.stdout, r"^\[verify\] PASS \([0-9]+s\)\n$")
         self.assertNotIn("log:", result.stdout)
         self.assertNotIn("noisy-success", result.stdout)
-        self.assertEqual(self.capture_log().read_text(encoding="utf-8").count("noisy-success"), 100)
+        self.assertEqual(list(self.runtime_tmp.rglob("latest.log")), [])
+        self.assertEqual(list((self.repo / ".git" / "token-gates").rglob("latest.log")), [])
 
     def test_whole_command_failure_returns_bounded_line_index(self) -> None:
         result = self.run_capture(
@@ -206,6 +222,7 @@ class RunnerTests(GitFixture):
         self.assertRegex(lines[0], r"^\[verify\] FAIL \(exit 19, [0-9]+s\) — log: .+/latest\.log$")
         self.assertEqual(lines[1], "[verify] INDEX L31: src/check.ts:14:3 error TS2322: wrong type")
         self.assertEqual(len(lines), 2)
+        self.assertTrue(retained_log(result.stdout).is_relative_to(self.runtime_tmp))
 
     def test_whole_command_warning_uses_explicit_detector(self) -> None:
         result = self.run_capture("echo 'NOTICE quota nearing limit'", "--warn-regex", "'^NOTICE '")
@@ -247,8 +264,7 @@ class RunnerTests(GitFixture):
         self.assertRegex(result.stdout, r"\[verify\] WARN vocab \([0-9.]+s\) — log: .+")
         self.assertRegex(result.stdout, r"\[verify\] FAIL broken \(exit 23, [0-9.]+s\) — log: .+")
 
-        fail_line = next(line for line in result.stdout.splitlines() if "FAIL broken" in line)
-        log_path = Path(fail_line.split(" — log: ", 1)[1])
+        log_path = retained_log(result.stdout)
         self.assertTrue(log_path.is_file())
         self.assertEqual(stat.S_IMODE(log_path.stat().st_mode), 0o600)
         log = log_path.read_text(encoding="utf-8")
@@ -257,16 +273,12 @@ class RunnerTests(GitFixture):
         self.assertIn("failure detail", log)
         self.assertEqual(run("git", "status", "--porcelain=v1", cwd=self.repo).stdout.count("token-gates"), 0)
 
-    def test_runner_overwrites_stale_content(self) -> None:
-        first = self.run_gate("token_gate_stage first -- bash -c 'echo stale-marker'")
-        first_log = Path(next(line for line in first.stdout.splitlines() if "log:" in line).split("log: ", 1)[1])
-        second = self.run_gate("token_gate_stage second -- bash -c 'echo fresh-marker'")
-        second_log = Path(next(line for line in second.stdout.splitlines() if "log:" in line).split("log: ", 1)[1])
+    def test_runner_deletes_log_after_all_stages_pass(self) -> None:
+        result = self.run_gate("token_gate_stage first -- bash -c 'echo success-marker'")
 
-        self.assertEqual(first_log, second_log)
-        content = second_log.read_text(encoding="utf-8")
-        self.assertNotIn("stale-marker", content)
-        self.assertIn("fresh-marker", content)
+        self.assertEqual(result.returncode, 0)
+        self.assertNotIn("log:", result.stdout)
+        self.assertEqual(list(self.runtime_tmp.rglob("latest.log")), [])
 
     def test_runner_preserves_signal_termination(self) -> None:
         result = self.run_gate("token_gate_stage signaled -- bash -c 'kill -TERM $$'")
@@ -302,7 +314,9 @@ class RunnerTests(GitFixture):
         linked = Path(self.tempdir.name) / "linked worktree"
         run("git", "worktree", "add", "-q", "-b", "linked", str(linked), cwd=self.repo)
 
-        main_result = self.run_gate("token_gate_stage main -- bash -c 'echo main-marker'")
+        main_result = self.run_gate(
+            "token_gate_stage --warn-regex warning main -- bash -c 'echo main-warning'"
+        )
         linked_script = linked / "linked-gate.sh"
         linked_script.write_text(
             textwrap.dedent(
@@ -310,19 +324,19 @@ class RunnerTests(GitFixture):
                 #!/usr/bin/env bash
                 source {json.dumps(str(RUNNER))}
                 token_gate_begin verify
-                token_gate_stage linked -- bash -c 'echo linked-marker'
+                token_gate_stage --warn-regex warning linked -- bash -c 'echo linked-warning'
                 token_gate_finish
                 """
             ).lstrip(),
             encoding="utf-8",
         )
-        linked_result = run("bash", str(linked_script), cwd=linked, check=False)
+        linked_result = run("bash", str(linked_script), cwd=linked, check=False, env=self.runtime_env())
 
-        main_log = Path(next(line for line in main_result.stdout.splitlines() if "log:" in line).split("log: ", 1)[1])
-        linked_log = Path(next(line for line in linked_result.stdout.splitlines() if "log:" in line).split("log: ", 1)[1])
+        main_log = retained_log(main_result.stdout)
+        linked_log = retained_log(linked_result.stdout)
         self.assertNotEqual(main_log, linked_log)
-        self.assertIn("main-marker", main_log.read_text(encoding="utf-8"))
-        self.assertIn("linked-marker", linked_log.read_text(encoding="utf-8"))
+        self.assertIn("main-warning", main_log.read_text(encoding="utf-8"))
+        self.assertIn("linked-warning", linked_log.read_text(encoding="utf-8"))
 
 
 class MeasureTests(GitFixture):
@@ -359,7 +373,14 @@ class MeasureTests(GitFixture):
 
 
 class CaptureTests(GitFixture):
+    def setUp(self) -> None:
+        super().setUp()
+        self.runtime_tmp = (Path(self.tempdir.name) / "runtime tmp").resolve()
+        self.runtime_tmp.mkdir(mode=0o700)
+
     def capture(self, command: str, *options: str) -> subprocess.CompletedProcess[str]:
+        env = os.environ.copy()
+        env["TMPDIR"] = str(self.runtime_tmp)
         return run(
             "python3",
             str(CAPTURE),
@@ -374,13 +395,8 @@ class CaptureTests(GitFixture):
             command,
             cwd=self.repo,
             check=False,
+            env=env,
         )
-
-    def capture_log(self) -> Path:
-        git_dir = Path(run("git", "rev-parse", "--git-dir", cwd=self.repo).stdout.strip())
-        if not git_dir.is_absolute():
-            git_dir = self.repo / git_dir
-        return git_dir / "token-gates" / "capture" / "verify_ci" / "latest.log"
 
     def test_success_prints_one_summary_line_without_log_path(self) -> None:
         result = self.capture("printf 'noisy-success\\n%.0s' {1..100}")
@@ -389,9 +405,8 @@ class CaptureTests(GitFixture):
         self.assertRegex(result.stdout, r"^\[verify:ci\] PASS \([0-9.]+s\)\n$")
         self.assertNotIn("log:", result.stdout)
         self.assertNotIn("noisy-success", result.stdout)
-        log = self.capture_log()
-        self.assertEqual(stat.S_IMODE(log.stat().st_mode), 0o600)
-        self.assertEqual(log.read_text(encoding="utf-8").count("noisy-success"), 100)
+        self.assertEqual(list(self.runtime_tmp.rglob("latest.log")), [])
+        self.assertEqual(list((self.repo / ".git" / "token-gates").rglob("latest.log")), [])
 
     def test_failure_prints_log_path_and_bounded_line_index(self) -> None:
         result = self.capture(
@@ -406,6 +421,9 @@ class CaptureTests(GitFixture):
         self.assertEqual(lines[1], "[verify:ci] INDEX L31: src/check.ts:14:3 error TS2322: wrong type")
         self.assertEqual(len(lines), 2)
         self.assertNotIn("progress-1", result.stdout)
+        log = retained_log(result.stdout)
+        self.assertTrue(log.is_relative_to(self.runtime_tmp))
+        self.assertEqual(stat.S_IMODE(log.stat().st_mode), 0o600)
 
     def test_failure_index_is_bounded(self) -> None:
         result = self.capture("for n in {1..20}; do echo \"error: problem-$n\"; done; exit 1")
@@ -431,6 +449,17 @@ class CaptureTests(GitFixture):
             r"^\[verify:ci\] WARN \([0-9.]+s\) — log: .+/latest\.log$",
         )
         self.assertEqual(result.stdout.splitlines()[1], "[verify:ci] INDEX L1: NOTICE quota nearing limit")
+
+    def test_retained_log_is_overwritten_for_the_same_worktree_and_label(self) -> None:
+        first = self.capture("echo 'error: stale'; exit 1")
+        second = self.capture("echo 'error: fresh'; exit 1")
+
+        first_log = retained_log(first.stdout)
+        second_log = retained_log(second.stdout)
+        self.assertEqual(first_log, second_log)
+        content = second_log.read_text(encoding="utf-8")
+        self.assertNotIn("stale", content)
+        self.assertIn("fresh", content)
 
     def test_signal_termination_is_reported_and_re_raised(self) -> None:
         result = self.capture("kill -TERM $$")

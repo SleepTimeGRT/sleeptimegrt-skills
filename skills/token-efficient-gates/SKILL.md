@@ -22,7 +22,7 @@ python3 <skill-dir>/scripts/capture.py \
   -- pnpm verify:ci
 ```
 
-The helper stores combined stdout/stderr in a restrictive, worktree-specific `latest.log` under Git's internal path. It preserves the command exit status and signal behavior.
+The helper stores combined stdout/stderr in a restrictive, worktree-specific `latest.log` below `${TMPDIR:-/tmp}`. It deletes the log on `PASS`; `WARN` and `FAIL` retain one bounded `latest.log` for diagnosis. It preserves the command exit status and signal behavior.
 
 Consume its result economically:
 

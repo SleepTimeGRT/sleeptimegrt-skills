@@ -23,7 +23,7 @@ Do not reintroduce GitHub Actions minutes, runner billing, workflow scheduling, 
 - `references/output-economics.md` — measurement provenance, progressive diagnostics, warning, and log guidance.
 - `agents/openai.yaml` — UI metadata.
 
-`tests/test_token_efficient_gates.py` contains nineteen fixture tests. The suite and official `quick_validate.py` passed on 2026-07-20.
+`tests/test_token_efficient_gates.py` contains twenty fixture tests. The suite and official `quick_validate.py` passed on 2026-07-20.
 
 The obsolete `skills/quiet-gates/` folder was removed after the replacement passed.
 
@@ -31,7 +31,7 @@ The obsolete `skills/quiet-gates/` folder was removed after the replacement pass
 
 Reduce repeated terminal output that enters agent context without reducing verification coverage or changing the command being run.
 
-The normal solution is agent-side capture, not rewriting `verify`, `verify:ci`, package scripts, or hooks. Preserve the original command and arguments as one opaque invocation. Successful runs return one summary line and require no log read. Warning or failed runs return a bounded `L<number>` diagnostic index into a restrictive Git-internal log.
+The normal solution is agent-side capture, not rewriting `verify`, `verify:ci`, package scripts, or hooks. Preserve the original command and arguments as one opaque invocation. Successful runs return one summary line, delete their temporary log, and require no log read. Warning or failed runs return a bounded `L<number>` diagnostic index into a restrictive `${TMPDIR:-/tmp}` log.
 
 Target local surfaces:
 
@@ -103,6 +103,8 @@ On 2026-07-20 the user explicitly approved a persistent first pilot in `/Users/m
 - Controlled failure fixture: original exit 19 preserved, raw failure hidden, exact failure candidate returned as `INDEX L8`.
 - Log mode verified as `0600`; shell syntax, copied-asset equality, `git diff --check`, nineteen skill fixture tests, and official skill validation passed.
 
+A follow-up on 2026-07-20 moved capture logs from Git-internal storage to `${TMPDIR:-/tmp}`. Paths remain worktree/label scoped with one bounded `latest.log`; `PASS` deletes the log, while `WARN` and `FAIL` retain it. The target-local asset was updated with the skill asset, the actual pre-push warning log was verified as `0600`, and the obsolete Git-internal pre-push log was removed. The expanded suite now has twenty tests.
+
 The target pilot changes are `.githooks/pre-push`, `AGENTS.md`, and `tools/token-gate.sh`.
 
 ## Runner contract
@@ -121,8 +123,8 @@ The optional repo-local asset retains this persistent-adapter contract:
 - One summary line per completed stage plus a final result.
 - Preserve `PASS`, `WARN`, `FAIL`, and `SKIP` distinctly.
 - Preserve stage order, conditions, exit codes, signals, and fail-fast or aggregate-failure behavior.
-- Store combined stdout/stderr under `git rev-parse --git-path "token-gates/<entrypoint>/latest.log"`.
-- Use restrictive permissions and one `latest.log` rather than unbounded timestamp accumulation.
+- Store combined stdout/stderr under `${TMPDIR:-/tmp}` with a worktree-derived identity and entrypoint label.
+- Use restrictive permissions and one `latest.log` rather than unbounded timestamp accumulation; delete it on `PASS` and retain it only for `WARN` or `FAIL`.
 - Keep target repositories independent of `sleeptimegrt-skills` at runtime.
 - Use a narrow verified warning detector per stage.
 

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 from pathlib import Path
 import re
@@ -37,8 +38,18 @@ def git(repo: Path, *args: str) -> str:
 def log_path(repo: Path, label: str) -> Path:
     safe_label = re.sub(r"[^A-Za-z0-9._-]", "_", label)
     root = Path(git(repo, "rev-parse", "--show-toplevel")).resolve()
-    raw = Path(git(root, "rev-parse", "--git-path", f"token-gates/capture/{safe_label}/latest.log"))
-    return raw if raw.is_absolute() else root / raw
+    git_dir = Path(git(root, "rev-parse", "--absolute-git-dir")).resolve()
+    worktree_key = hashlib.sha256(str(git_dir).encode()).hexdigest()
+    temp_root = Path(os.environ.get("TMPDIR") or "/tmp").resolve()
+    return temp_root / f"token-gates-{os.getuid()}" / worktree_key / safe_label / "latest.log"
+
+
+def discard_log(path: Path) -> None:
+    path.unlink(missing_ok=True)
+    try:
+        path.parent.rmdir()
+    except OSError:
+        pass
 
 
 def clean_snippet(raw: str) -> str:
@@ -97,6 +108,7 @@ def main() -> int:
         old_umask = os.umask(0o077)
         try:
             path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            path.parent.chmod(0o700)
             with path.open("wb") as output:
                 started = time.monotonic()
                 completed = subprocess.run(
@@ -117,10 +129,12 @@ def main() -> int:
     elapsed = f"{duration:.3f}s"
     if completed.returncode == 0:
         if warning_marker is None:
+            discard_log(path)
             print(f"[{label}] PASS ({elapsed})")
             return 0
         warning_matches, _ = indexed_lines(path, warning_marker)
         if not warning_matches:
+            discard_log(path)
             print(f"[{label}] PASS ({elapsed})")
             return 0
         print(f"[{label}] WARN ({elapsed}) — log: {path}")

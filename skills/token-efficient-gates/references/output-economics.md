@@ -39,7 +39,7 @@ Do not use a universal `warning|warn` pattern. Test names, dependency summaries,
 
 ## Log lifecycle and safety
 
-The capture helper derives its path through Git so logs remain untracked and linked worktrees are isolated. It keeps one `latest.log` per label, creates it with restrictive permissions, and does not print its path on success.
+The capture helper derives a worktree identity from Git but stores output below `${TMPDIR:-/tmp}`. Linked worktrees remain isolated, and each worktree/label pair has one `latest.log` rather than timestamp accumulation. Directories use restrictive permissions and the log is `0600`. A `PASS` deletes the log; `WARN` and `FAIL` retain it and print its path for immediate diagnosis. Temporary storage may be cleared by the operating system, which is appropriate because these logs are diagnostic scratch data rather than durable records.
 
 Logs can contain credentials, headers, environment dumps, connection strings, or user data. Review output risk before capture, never upload logs automatically, and quote only the bounded evidence required for diagnosis.
 

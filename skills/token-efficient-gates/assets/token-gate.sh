@@ -13,16 +13,17 @@ token_gate_begin() {
     printf '[%s] FAIL setup — not inside a Git worktree\n' "$TOKEN_GATE_NAME" >&2
     return 2
   }
-  TOKEN_GATE_RAW_LOG=$(cd "$TOKEN_GATE_ROOT" && git rev-parse --git-path "token-gates/$TOKEN_GATE_SAFE_NAME/latest.log") || return $?
-  case "$TOKEN_GATE_RAW_LOG" in
-    /*) TOKEN_GATE_LOG=$TOKEN_GATE_RAW_LOG ;;
-    *) TOKEN_GATE_LOG=$TOKEN_GATE_ROOT/$TOKEN_GATE_RAW_LOG ;;
-  esac
-  TOKEN_GATE_LOG_DIR=${TOKEN_GATE_LOG%/*}
+  TOKEN_GATE_GIT_DIR=$(cd "$TOKEN_GATE_ROOT" && git rev-parse --absolute-git-dir) || return $?
+  TOKEN_GATE_WORKTREE_KEY=$(printf '%s\n' "$TOKEN_GATE_GIT_DIR" | git hash-object --stdin) || return $?
+  TOKEN_GATE_TMP_BASE=${TMPDIR:-/tmp}
+  TOKEN_GATE_TEMP_ROOT=${TOKEN_GATE_TMP_BASE%/}/token-gates-$(id -u)
+  TOKEN_GATE_LOG_DIR=$TOKEN_GATE_TEMP_ROOT/$TOKEN_GATE_WORKTREE_KEY/$TOKEN_GATE_SAFE_NAME
+  TOKEN_GATE_LOG=$TOKEN_GATE_LOG_DIR/latest.log
 
   token_gate_old_umask=$(umask)
   umask 077
   mkdir -p "$TOKEN_GATE_LOG_DIR" || return $?
+  chmod 700 "$TOKEN_GATE_TEMP_ROOT" "$TOKEN_GATE_TEMP_ROOT/$TOKEN_GATE_WORKTREE_KEY" "$TOKEN_GATE_LOG_DIR" || return $?
   : >"$TOKEN_GATE_LOG" || return $?
   chmod 600 "$TOKEN_GATE_LOG" || return $?
   for token_gate_stale in "$TOKEN_GATE_LOG_DIR"/.stage.*; do
@@ -36,6 +37,11 @@ token_gate_begin() {
   TOKEN_GATE_FAIL_COUNT=0
   TOKEN_GATE_STAGE_COUNT=0
   export TOKEN_GATE_NAME TOKEN_GATE_LOG TOKEN_GATE_LOG_DIR
+}
+
+_token_gate_discard_log() {
+  rm -f -- "$TOKEN_GATE_LOG"
+  rmdir "$TOKEN_GATE_LOG_DIR" 2>/dev/null || true
 }
 
 _token_gate_print_index() {
@@ -108,6 +114,7 @@ token_gate_capture() {
       printf '[%s] WARN (%ss) — log: %s\n' "$TOKEN_GATE_NAME" "$token_gate_capture_elapsed" "$TOKEN_GATE_LOG"
       _token_gate_print_index "$token_gate_capture_warn_regex" 0
     else
+      _token_gate_discard_log
       printf '[%s] PASS (%ss)\n' "$TOKEN_GATE_NAME" "$token_gate_capture_elapsed"
     fi
     return 0
@@ -214,7 +221,12 @@ token_gate_finish() {
   else
     token_gate_result=PASS
   fi
-  printf '[%s] %s %s stages — log: %s\n' \
-    "$TOKEN_GATE_NAME" "$token_gate_result" "${TOKEN_GATE_STAGE_COUNT:-0}" "$TOKEN_GATE_LOG"
+  if [ "$token_gate_result" = PASS ]; then
+    _token_gate_discard_log
+    printf '[%s] PASS %s stages\n' "$TOKEN_GATE_NAME" "${TOKEN_GATE_STAGE_COUNT:-0}"
+  else
+    printf '[%s] %s %s stages — log: %s\n' \
+      "$TOKEN_GATE_NAME" "$token_gate_result" "${TOKEN_GATE_STAGE_COUNT:-0}" "$TOKEN_GATE_LOG"
+  fi
   [ "${TOKEN_GATE_FAIL_COUNT:-0}" -eq 0 ]
 }
