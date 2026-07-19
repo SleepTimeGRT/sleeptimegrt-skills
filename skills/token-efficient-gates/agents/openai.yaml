@@ -1,0 +1,4 @@
+interface:
+  display_name: "Token-Efficient Gates"
+  short_description: "Reduce agent token waste from verification output"
+  default_prompt: "Use $token-efficient-gates to audit and compact noisy local verification output without losing diagnostics."
