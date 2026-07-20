@@ -1,4 +1,25 @@
-# Handoff — remote-ci-economics: drafted; fixtures and evals next
+# Handoff — remote-ci-economics: drafted; pilots applied; fixtures and evals next
+
+## Pilot rollout status (applied 2026-07-20, user-approved)
+
+All three pilots are now at **zero remote CI on main + a local pre-push gate**:
+
+- **toss-space-goldrush**: PR
+  [#501](https://github.com/studio-hevv/toss-space-goldrush/pull/501) squash-merged as
+  `9da999fe7ce24967b4479997d421ad6cba4566b0`. Deleted `.github/workflows/verify.yml`
+  (verify + e2e, PR+push); wired `.githooks/pre-push` to run `pnpm verify` through the
+  token-efficient gate (`scripts/verify-agent.sh`). Local gate verified PASS (~37–51 s) and
+  the hook fired live on push. Coverage trade-off: `verify` preserved (moved to blocking
+  local pre-push); `e2e` moved from remote per-PR to local on-demand (`pnpm test:e2e`).
+  Done in an isolated Orca worktree (now removed); remote branch deleted.
+- **toss-samhaengsi**: already zero remote CI (workflow deleted by the team 7/18); has a
+  token-gate `.githooks/pre-push`. No change needed — no PR.
+- **medicount**: main has zero workflows; local gate via `.husky/pre-push`. No change
+  needed — no PR.
+
+Still outstanding and **outside this repo's authority** (org-admin UI only): studio-hevv
+Actions remains billing-blocked until the Aug 1 quota reset or a billing change. goldrush
+now has no remote CI to block, so this no longer gates goldrush merges.
 
 ## Current state (2026-07-20)
 
