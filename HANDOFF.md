@@ -1,150 +1,129 @@
-# Handoff — agent token economics skills
+# Handoff — remote-ci-economics: drafted; fixtures and evals next
 
-## Current decision
+## Current state (2026-07-20)
 
-The original composite `quiet-gates` design was split on 2026-07-19 because local agent-context economics and remote CI budget economics have different triggers, evidence, and mutation contracts.
+The second skill exists as a validated draft at `skills/remote-ci-economics/`:
 
-Create two specialized skills:
+- `SKILL.md` — audit contract (read-only, provenance-dated claims, unknowns stay unknown),
+  operating-profile-first judgment, inventory pitfalls, billing-block signature, gate-placement
+  classification, fixed 7-section report template, apply-only-on-explicit-request.
+- `scripts/collect.py` — read-only evidence collector over `gh api` (runs, jobs, annotations,
+  caches, artifacts, workflow history, org billing usage/summary/budgets). Endpoint failures are
+  recorded inside the bundle, not fatal.
+- `scripts/analyze.py` — network-free deterministic analyzer (per-job round-up billable
+  estimates, runner multipliers, event mix, rerun/cancel rates, billed monthly totals,
+  quota-equivalents by repo, burn projection, billing-block detection, tagged findings).
+  Collection/analysis are split so fixture tests need only JSON bundles.
+- `references/github-actions-billing.md` — prices, quotas, multipliers, limits, API endpoints and
+  access requirements, each with source URL and fetch date (2026-07-20), plus re-verification
+  instructions and the observed API quirks.
 
-1. **Agent token economics** — current focus, implemented as `token-efficient-gates`.
-2. **Remote CI budget economics** — deferred; do not create an empty placeholder skill.
+The official skill validator passed (`quick_validate.py`, run via `uv run --with pyyaml` because
+system python lacks pyyaml). Smoke test against live `studio-hevv/toss-space-goldrush` reproduced
+all five manual audit findings automatically.
 
-Do not reintroduce GitHub Actions minutes, runner billing, workflow scheduling, matrices, caches, services, or artifact economics into `token-efficient-gates`.
+Uncommitted working-tree changes: `skills/remote-ci-economics/` (new), one boundary line in
+`skills/token-efficient-gates/SKILL.md` now naming `remote-ci-economics`, and this file. The user
+has not requested a commit. Do not commit or push unless explicitly asked.
 
-## Current implementation
+## Decisions confirmed with the user this session
 
-`skills/token-efficient-gates/` exists and contains:
+1. Scope: GitHub Actions first-class; concepts and report provider-neutral. Name:
+   `remote-ci-economics` (chosen after economics were understood, per prior instruction).
+2. Contract: audit-and-recommend first; apply only on explicit request. Report =
+   spend evidence → expensive paths → coverage/risk constraints → ranked recommendations →
+   savings estimates (formula + assumptions) → no-change findings → unknowns/access limits.
+3. Development philosophy (also saved to agent memory `ci-philosophy-light-remote-heavy-local`):
+   the user's projects are almost all **solo-dev, single device, agent-driven**. Remote CI is
+   "barely necessary"; keep at most cheap deterministic gates in CI, put heavy verification
+   (E2E, emulators, pgTAP, type-checks) in the local harness. "No remote CI" is a legitimate
+   recommendation for this profile. Never assume team-CI defaults. Residual risk is local
+   environment drift → occasional clean-environment run (manual dispatch), not per-PR CI.
+4. medicount was confirmed by the user to have been transferred from a personal repo to the
+   MediCount org after a billing problem — this validated the audit's transfer inference.
 
-- `SKILL.md` — capture-first agent consumption workflow, with Audit and Measure as supporting modes.
-- `scripts/audit.py` — read-only tracked hook/shell/package inventory and local call edges. It intentionally ignores `.github/workflows`.
-- `scripts/capture.py` — executes the original command unchanged, keeps passing output out of agent context, and returns bounded line-number indexes for warnings or failures.
-- `scripts/measure.py` — executes one already-reviewed safe command while redirecting raw output to a worktree-specific `latest.log`; terminal output is one JSON summary.
-- `assets/token-gate.sh` — optional standalone repo-local compact runner for explicitly requested persistent adaptations.
-- `references/output-economics.md` — measurement provenance, progressive diagnostics, warning, and log guidance.
-- `agents/openai.yaml` — UI metadata.
+## Verified audit evidence (2026-07-20, GitHub REST API, account SleepTimeGRT)
 
-`tests/test_token_efficient_gates.py` contains twenty fixture tests. The suite and official `quick_validate.py` passed on 2026-07-20.
+Full reports were written to session scratchpad `ci-audit/reports/` (ephemeral); the essentials:
 
-The obsolete `skills/quiet-gates/` folder was removed after the replacement passed.
+### Corrections to the previous handoff's premises
 
-## Objective
+"No tracked workflow" for medicount/samhaengsi was misleading. Pull-request runs execute the
+workflow file from the PR merge ref, so branch-only workflows bill real minutes; both repos had
+substantial spend. Run-sample `path`s, not the workflows listing, are the inventory truth.
 
-Reduce repeated terminal output that enters agent context without reducing verification coverage or changing the command being run.
+### studio-hevv org (free plan, 2,000 included min/month; all repos private)
 
-The normal solution is agent-side capture, not rewriting `verify`, `verify:ci`, package scripts, or hooks. Preserve the original command and arguments as one opaque invocation. Successful runs return one summary line, delete their temporary log, and require no log read. Warning or failed runs return a bounded `L<number>` diagnostic index into a restrictive `${TMPDIR:-/tmp}` log.
+- July (through 7/19): Linux 1,420 min + macOS 57 min (10x multiplier) = **1,990/2,000
+  quota-minute-equivalents, gross $12.054, net $0**. May 38, June 47 min — July exploded.
+- By quota consumption: toss-samhaengsi 1,165 (58%), ultari 600 equiv (57 macOS min — 2nd
+  biggest consumer), toss-space-goldrush 186, others ≤30.
+- Budgets API: `actions` (and 3 other SKUs) budget **$0 + prevent_further_usage: true** → hard
+  org-wide stop at quota exhaustion.
+- **The org is BLOCKED since 2026-07-19 18:25–18:38 UTC** (last real goldrush job 18:25; from
+  18:38 jobs die in 2–3 s, steps 0, log blob 404, annotation "The job was not started because
+  recent account payments have failed or your spending limit needs to be increased"). The e2e
+  stabilization commit `1cef906b` reached goldrush main **unverified by CI**. Block persists
+  until Aug 1 reset or an org admin changes billing — user decision, outside audit authority.
+- goldrush: verify job p50 98 s → 2 billed min; e2e p50 276 s → 5–6 billed min; runs without
+  e2e ≈1.8, with e2e ≈6.5 min. PR+push double-run ≈43–45% push share. Biggest lever: drop e2e
+  from push-to-main (PR-only). Playwright-install caching hypothesis was REFUTED by step
+  measurement (~24 s install) — measure step costs before recommending caches.
+- samhaengsi: 3-job CI (gate 91 s / emulator 202 s / e2e 168 s ≈ 9 billed min/run) burned
+  1,165 min in 8 days (7/10–7/18); the team deleted the workflow from main 7/18 12:12
+  (`bd81f4ee` "chore(ci): GitHub Actions 제거 → 로컬 3층 검증 (free-private 비용)"). Under the
+  solo-dev profile this deletion is coherent, not overcorrection. Workflow comments confirm
+  required checks are unavailable on free-private (403).
+- medicount (MediCount org): July 20 min, June 29, Mar–May no usage items (billed to previous
+  owner pre-transfer). Billing block observed 7/6–7/18 09:03 (same signature, annotation
+  verified); normal from 7/18 09:19 ≈ transfer time. Current slim `ci.yml` (biome-check +
+  path-filtered conditional jobs; e2e removed from GHA 7/3, heavy gates local via
+  `pnpm verify:ci`) already matches the target posture — a genuine mostly-no-change case.
 
-Target local surfaces:
+### Credential/access limits (record, do not re-derive)
 
-- Git hooks (`pre-commit`, `pre-push`, `pre-merge`)
-- agent-executed `verify`, lint, typecheck, test, and local CI entry points
-- tracked `.sh` files
-- root and workspace `package.json` call chains
+- Token scopes `repo`, `read:org`: org billing usage/summary/budgets readable for BOTH orgs;
+  user-account billing 404 (needs `user` scope); classic org billing endpoint HTTP 410.
+- Usage endpoint without `year`/`month` params returns aggregation with misleading
+  `repositoryName` — always pass both (collector does).
 
-Desired non-interactive output:
+## Next-session plan
 
-```text
-[verify:ci] PASS (4s)
-[verify:ci] WARN (1s) — log: <path>
-[verify:ci] INDEX L33: <bounded warning marker>
-[verify:ci] FAIL (exit 1, 7s) — log: <path>
-[verify:ci] INDEX L184: <bounded failure marker>
-```
+1. Read `AGENTS.md` and this file. The skill draft is done — do not redesign it from scratch.
+2. Build temporary fixture bundles/repos per the archetypes below; add `tests/` for
+   `analyze.py` (pure JSON-in) and collector arg/error paths.
+3. Create realistic eval prompts; run with-skill and baseline evals per `skill-creator`
+   (workspace as sibling `remote-ci-economics-workspace/`); generate the review viewer.
+4. After user review, iterate; then offer description optimization (`run_loop.py`).
+5. Pilot repository changes (e.g., goldrush push-e2e removal) only after explicit user
+   approval, via `/orchestration` + independent Orca worktrees, separate commit/PR per repo.
+   The audit itself must never trigger workflows or change settings.
 
-Full diagnostics remain available in a bounded, restrictive, worktree-safe log. Interactive development, deploy, release, migration, destructive data, and external-write commands are exclusion boundaries rather than compaction targets.
+## Fixture archetypes (grounded in real cases observed this session)
 
-## Measurement provenance
+- active workflow with PR+push duplication and a heavy job (goldrush shape)
+- branch-only workflow spending minutes with clean default branch (samhaengsi shape)
+- cost-motivated deletion history + slim conditional CI (medicount shape)
+- billing-block window: instant-dead jobs + annotations + flat usage during red runs
+- quota near-exhaustion with $0 prevent_further_usage budget
+- macOS multiplier dominating quota despite small raw minutes (ultari shape)
+- org months with missing usage (pre-transfer) alongside existing runs
+- no workflows and no runs at all (true negative; distinct from branch-only case)
+- unreadable billing endpoints (errors recorded, findings marked unknown)
+- plan unknown → no quota projection emitted
 
-Keep these facts separate:
+## Acceptance criteria (carried forward, still binding)
 
-- Terminal output lines and bytes can be measured by `measure.py`.
-- Agent tool-output tokens are known only when the harness reports them.
-- Model input tokens are known only when the model/harness reports them.
+- The audit never triggers workflows or mutates repository/organization settings.
+- Every external-state or cost claim has source and observation date; unknowns stay unknown.
+- Findings distinguish confirmed / risk / opportunity / unknown.
+- Recommendations preserve required verification coverage or explicitly state the trade-off.
+- E2E/pgTAP placed by risk, runtime, frequency, and feedback latency — never removed categorically.
+- Savings estimates are reproducible from stated inputs and never presented as observed billing.
+- "No optimization justified" is a valid, complete result.
+- The skill stays domain-neutral and independent of any pilot at runtime.
 
-Do not invent a byte-to-token conversion.
+## Repository operation note
 
-## Verified initiating evidence
-
-The initiating repository was `/Users/minchul/Projects/toss-samhaengsi`.
-
-- `.githooks/pre-push` runs `typecheck → spec:trace → spec:vocab → test:unit → test:tools` and forwards every child command's output.
-- A real `git push` previously produced approximately 68,031 reported tool-output tokens before truncation; 40,000 tokens were returned to agent context.
-- `.githooks/pre-commit` was already relatively concise.
-- `tools/pre-merge-local.sh`, `pnpm verify`, and `tools/e2e-ci.sh` also inherit verbose child output.
-- `spec:vocab` can exit successfully while emitting warnings, so binary success/failure output is insufficient.
-
-The token figures above are prior captured evidence, not a measurement repeated by the new helper in the current implementation session.
-
-## First pilot repositories
-
-Use these as explicit read-only targets before applying changes:
-
-1. `/Users/minchul/Projects/toss-samhaengsi`
-   - Primary apply candidate: `.githooks/pre-push`.
-   - Do not execute E2E merely to measure output; its script owns and kills emulator processes.
-2. `/Users/minchul/Projects/medicount`
-   - `.husky/pre-push` is already a concise verification-stamp check; do not rewrite it.
-   - `scripts/verify-ci.sh` is an aggregate-failure compacting candidate and conditionally performs local DB reset + pgTAP, so measurement requires resolving the safety boundary first.
-3. `/Users/minchul/Projects/toss-space-goldrush`
-   - Tracked pre-push hook performs no verification; recommend no pre-push rewrite.
-   - Remote GitHub workflow economics belong to the deferred second skill.
-
-“All repositories have the same problem” remains false based on the pilots. Inventory before proposing mutations.
-
-## toss-samhaengsi pilot applied
-
-On 2026-07-20 the user explicitly approved a persistent first pilot in `/Users/minchul/Projects/toss-samhaengsi`.
-
-- Added `tools/token-gate.sh` as a target-local copy of the skill asset.
-- Wrapped `.githooks/pre-push` with one whole-command capture and a recursion guard; the original five commands remain verbatim and in the same order.
-- Added only the verified `^⚠ spec:vocab` exit-zero warning detector.
-- Updated `AGENTS.md` with the capture/index behavior.
-- Actual safe pre-push run: exit 0, `WARN`, two agent-facing lines, 267 bytes, 84 exact `o200k_base` tokens.
-- Previous baseline for the same hook: 7,425 lines and 79,487 exact `o200k_base` tokens. The pilot log remains 7,425 lines and preserves all five stage markers plus final OK.
-- Controlled failure fixture: original exit 19 preserved, raw failure hidden, exact failure candidate returned as `INDEX L8`.
-- Log mode verified as `0600`; shell syntax, copied-asset equality, `git diff --check`, nineteen skill fixture tests, and official skill validation passed.
-
-A follow-up on 2026-07-20 moved capture logs from Git-internal storage to `${TMPDIR:-/tmp}`. Paths remain worktree/label scoped with one bounded `latest.log`; `PASS` deletes the log, while `WARN` and `FAIL` retain it. The target-local asset was updated with the skill asset, the actual pre-push warning log was verified as `0600`, and the obsolete Git-internal pre-push log was removed. The expanded suite now has twenty tests.
-
-The target pilot changes are `.githooks/pre-push`, `AGENTS.md`, and `tools/token-gate.sh`.
-
-## Runner contract
-
-The primary `scripts/capture.py` contract is:
-
-- Run the exact original argv once without stage decomposition or flag changes.
-- On `PASS`, print one summary line without a log path; the agent stops reading.
-- On `WARN` or `FAIL`, print the log path and at most five indexed diagnostic candidates with exact one-based line numbers.
-- If no failure marker matches, print only the final 20-line range to inspect.
-- Detect exit-zero warnings only through an explicitly supplied narrow `--warn-regex`.
-- Preserve the original exit code and re-raise terminating signals.
-
-The optional repo-local asset retains this persistent-adapter contract:
-
-- One summary line per completed stage plus a final result.
-- Preserve `PASS`, `WARN`, `FAIL`, and `SKIP` distinctly.
-- Preserve stage order, conditions, exit codes, signals, and fail-fast or aggregate-failure behavior.
-- Store combined stdout/stderr under `${TMPDIR:-/tmp}` with a worktree-derived identity and entrypoint label.
-- Use restrictive permissions and one `latest.log` rather than unbounded timestamp accumulation; delete it on `PASS` and retain it only for `WARN` or `FAIL`.
-- Keep target repositories independent of `sleeptimegrt-skills` at runtime.
-- Use a narrow verified warning detector per stage.
-
-## Acceptance criteria
-
-- Audit executes no target commands and leaves target status unchanged.
-- Measure runs only a fully inspected non-interactive, non-external-write command.
-- Measure returns only outcome, exit code, duration, lines, bytes, and log path to terminal context.
-- Apply changes only user-approved gate paths.
-- Full diagnostics remain recoverable through targeted log reads.
-- Successful, warning, failed, skipped, signaled, paths-with-spaces, linked-worktree, permission, stale-log, and aggregate-failure fixtures remain green.
-- Before/after verification stages are mechanically identical.
-
-## Next work
-
-Focus on the first skill:
-
-1. Re-run the three pilot commands through `scripts/capture.py` without changing their flags or target files.
-2. Verify that passing runs stop after one summary line and realistic failures yield useful bounded indexes.
-3. Do not prepare target hook or package-script adaptations unless explicitly requested.
-4. Forward-test realistic trigger prompts when authorized; no subagent validation has been run yet.
-
-Only after the first skill is accepted should a separately initialized remote CI budget economics skill be designed.
+Working tree has the uncommitted changes listed above. Follow the repository rule: do not
+commit or push `sleeptimegrt-skills` unless the user explicitly requests it.

@@ -87,4 +87,4 @@ When applying a persistent adapter, preserve stage order, conditions, exit codes
 
 ## Stop at the remote boundary
 
-Do not review or optimize GitHub Actions minutes, hosted runner billing, workflow triggers, matrices, concurrency, caches, services, or artifacts with this skill. Those belong to the separate remote CI budget economics skill.
+Do not review or optimize GitHub Actions minutes, hosted runner billing, workflow triggers, matrices, concurrency, caches, services, or artifacts with this skill. Those belong to the separate `remote-ci-economics` skill.
