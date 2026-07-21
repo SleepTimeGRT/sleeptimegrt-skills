@@ -7,8 +7,28 @@
 # they gate the merge instead (scripts/premerge.sh). Rationale: push feedback stays
 # fast, and the heavy gate sits where code actually enters the default branch.
 #
+# Deletion-only pushes (e.g. `git push origin --delete <branch>`) skip the gate
+# entirely: git feeds one line per pushed ref on stdin as
+# `<local ref> <local oid> <remote ref> <remote oid>`, and a deletion has an
+# all-zero local oid. If every ref in this invocation is a deletion there is no
+# tree to verify, so don't spend a `pnpm verify:static` run on it.
+#
 # bypass: `git push --no-verify` (WIP branches only — never for a PR about to merge).
 set -euo pipefail
+
+delete_only=1
+saw_ref=0
+while read -r _local_ref local_oid _remote_ref _remote_oid; do
+  saw_ref=1
+  case "$local_oid" in
+  *[!0]*) delete_only=0 ;;
+  esac
+done
+
+if [ "$saw_ref" -eq 1 ] && [ "$delete_only" -eq 1 ]; then
+  echo "[pre-push] SKIP — deletion-only push, nothing to verify"
+  exit 0
+fi
 
 REPO_ROOT=$(git rev-parse --show-toplevel)
 . "$REPO_ROOT/scripts/token-gate.sh"
