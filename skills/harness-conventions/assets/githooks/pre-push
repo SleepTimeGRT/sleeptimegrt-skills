@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# harness-conventions: canonical .githooks/pre-push v1 — do not hand-edit in the
+# target repository; change the copy in sleeptimegrt-skills and re-apply.
+#
+# pre-push: static checks only (`pnpm verify:static` = typecheck + lint/format
+# check + repo-specific static lints). Tests, emulators, and e2e do NOT run here —
+# they gate the merge instead (scripts/premerge.sh). Rationale: push feedback stays
+# fast, and the heavy gate sits where code actually enters the default branch.
+#
+# bypass: `git push --no-verify` (WIP branches only — never for a PR about to merge).
+set -euo pipefail
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+. "$REPO_ROOT/scripts/token-gate.sh"
+cd "$REPO_ROOT"
+
+# Optional repo tuning: .githooks/pre-push.conf may set WARN_REGEX to surface a
+# meaningful exit-zero warning marker (narrow pattern only — see token-efficient-gates).
+WARN_REGEX=""
+[ -f "$REPO_ROOT/.githooks/pre-push.conf" ] && . "$REPO_ROOT/.githooks/pre-push.conf"
+
+if [ -n "$WARN_REGEX" ]; then
+  token_gate_capture --warn-regex "$WARN_REGEX" pre-push -- pnpm verify:static
+else
+  token_gate_capture pre-push -- pnpm verify:static
+fi

@@ -1,4 +1,66 @@
-# Handoff — remote-ci-economics: drafted; pilots applied; fixtures and evals next
+# Handoff — harness-conventions drafted & fixture-tested; remote-ci-economics evals still pending
+
+## harness-conventions (new skill, 2026-07-21) — draft complete, not committed, not applied
+
+Cross-repo harness policy skill at `skills/harness-conventions/`. Decision record and all
+user-confirmed choices are in `references/policy-rationale.md` and agent memory
+`harness-unification-three-repos` (3-layer gates: pre-commit gitleaks+biome / static-only
+pre-push / premerge = full verify + e2e + cross-model review for code PRs; self-merge
+allowed on premerge PASS; gate-integrity paths mechanically PROTECTED; `.githooks` +
+prepare, husky removed; naming contract verify / verify:static / premerge).
+
+State:
+- Canonical assets (`assets/githooks/*`, `assets/scripts/{premerge.sh,token-gate.sh}`) —
+  token-gate.sh is the goldrush production copy + marker header; hooks/premerge are new.
+  Canonical files are hash-audited; repo-editable configs (`premerge.conf.sh`,
+  `worktree-links.conf`, `pre-push.conf`) are presence-checked only.
+- `scripts/audit.py` read-only drift audit: fixture-tested (16/16 incl. spaces-in-path,
+  PROTECTED, review-required, behind-main, dirty-tree, worktree symlinks, exit-code
+  passthrough) via scratchpad `fixture-test.sh`; official `quick_validate.py` passed
+  (via `uv run --with pyyaml`, cwd must be the skill-creator dir). Real-repo audits run
+  clean and show expected pre-application drift (medicount 11, samhaengsi/goldrush 7).
+- **medicount APPLIED (2026-07-21, user-approved)**: issue #221, PR #222
+  (github.com/MediCount/MediCount/pull/222) — awaiting HUMAN merge (premerge correctly
+  reports PROTECTED exit 3 on its own branch). husky removed; .githooks installed;
+  verify:ci → verify (capture label renamed), stamp gate deleted
+  (working-tree-hash.sh, .husky/, .git/verify-ci-stamp); verify:static + premerge wired
+  (premerge.conf.sh: E2E_CMD="pnpm e2e", PROTECTED_EXTRA covers verify-ci.sh +
+  guide/gate test files); gate tests rewritten (12/12; WARN case now exercises
+  token-gate --warn-regex directly, since the stamp warn marker is gone);
+  dev-workflow.md rewritten (guide-contract checker constraints: must mention ports
+  3001/3002, no "CI auto-runs" phrasing); AGENTS.md got the policy section.
+  All checks verified: verify:guides 12/12, verify:static + verify green,
+  audit COMPLIANT, pre-commit/pre-push fired live, post-checkout symlinked 3 files.
+  NOTE: `pnpm e2e` was NOT executed this session (needs local Supabase stack) — the
+  first real premerge run will exercise it; if red/slow, tune premerge.conf.sh.
+- **ALL THREE REPOS APPLIED (2026-07-21)**:
+  - medicount #221 → PR #222 **MERGED** (main 0c2f9f1).
+  - goldrush #508 → PR studio-hevv/toss-space-goldrush#509 awaiting human merge.
+    pre-push lightened full-verify → verify:static; premerge E2E_CMD="pnpm test:e2e"
+    (Playwright webServer self-starts emulator+web+seed); AGENTS.md self-merge policy
+    now premerge-based (resolved its contradiction with pickup-issue); org refs
+    SleepTimeGRT→studio-hevv fixed; test:token-gate green after marker header.
+  - samhaengsi #618 → PR studio-hevv/toss-samhaengsi#619 awaiting human merge.
+    tools/token-gate.sh → scripts/ (git mv); tools/pre-merge-local.sh DELETED,
+    replaced by premerge.sh (E2E_CMD="pnpm test:e2e:ci"); pre-push dropped
+    test:unit/test:tools (static only; spec:vocab WARN_REGEX via .githooks/
+    pre-push.conf — confirmed WARN+index on live push); self-merge ban (#598
+    incident) converted to premerge-based conditional self-merge; method-decision
+    0006 got a 2026-07-21 amendment; spec-gardener ghost post-commit ref fixed;
+    policy marker embedded inline in AGENTS.md merge-policy bullet (their
+    "no config mirroring" doc culture — not the full template section).
+  - All three: audit COMPLIANT, hooks fired live, premerge PROTECTED exit 3
+    verified on the application branch itself. e2e suites NOT executed this
+    session in any repo — first real code PR premerge will exercise them.
+- NOT yet done: skill-creator eval loop (optional); this repo's own changes are
+  uncommitted (user has not requested a commit). Superpowers skills are
+  complemented, not replaced (AGENTS.md policy template supplies the declared
+  preferences they ask about).
+- Do not commit or push this repo unless the user explicitly asks.
+
+---
+
+# Prior handoff — remote-ci-economics: drafted; pilots applied; fixtures and evals next
 
 ## Pilot rollout status (applied 2026-07-20, user-approved)
 

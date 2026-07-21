@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# harness-conventions: canonical .githooks/post-checkout v1 — do not hand-edit in the
+# target repository; change the copy in sleeptimegrt-skills and re-apply.
+#
+# post-checkout: when a new linked worktree is created (git worktree add), symlink
+# gitignored env/secret files from the main worktree so the worktree is immediately
+# runnable. The repo-specific file list lives in .githooks/worktree-links.conf
+# (one repo-relative path per line; # comments allowed).
+set -euo pipefail
+
+PREV_HEAD=$1
+NEW_HEAD=$2
+CHECKOUT_TYPE=$3 # 1=branch checkout, 0=file checkout
+
+# branch checkout only
+[ "$CHECKOUT_TYPE" -ne 1 ] && exit 0
+
+# linked worktrees only — never touch the main worktree
+MAIN=$(git worktree list --porcelain | awk 'NR==1{print substr($0, 10)}')
+CURRENT=$(git rev-parse --show-toplevel)
+[ "$MAIN" = "$CURRENT" ] && exit 0
+
+CONF="$CURRENT/.githooks/worktree-links.conf"
+[ -f "$CONF" ] || exit 0
+
+LINKED=0
+while IFS= read -r rel; do
+  case "$rel" in '' | '#'*) continue ;; esac
+  src="$MAIN/$rel"
+  dst="$CURRENT/$rel"
+  [ -f "$src" ] || continue
+  mkdir -p "$(dirname "$dst")"
+  if [ -e "$dst" ] && [ ! -L "$dst" ]; then
+    printf 'post-checkout: skip existing non-symlink %s\n' "$rel" >&2
+    continue
+  fi
+  ln -sfn "$src" "$dst"
+  LINKED=$((LINKED + 1))
+done <"$CONF"
+
+printf 'post-checkout: %s gitignored file(s) symlinked from main worktree\n' "$LINKED"

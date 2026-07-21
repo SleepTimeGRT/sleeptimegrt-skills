@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# harness-conventions: canonical .githooks/pre-commit v1 — do not hand-edit in the
+# target repository; change the copy in sleeptimegrt-skills and re-apply.
+#
+# pre-commit: gitleaks (staged secret scan) → biome check --write on staged files
+# + re-stage. Sequential; aborts on first failure. Auto-fix layer, not a gate:
+# runtime verification belongs to premerge, static verification to pre-push.
+set -euo pipefail
+
+# 1. gitleaks — staged diff secret scan (unconditional: secrets must never land)
+if ! command -v gitleaks &>/dev/null; then
+  printf 'pre-commit: gitleaks not found — install: brew install gitleaks\n' >&2
+  exit 1
+fi
+gitleaks protect --staged --no-banner --redact
+
+# 2. biome — lint + format auto-fix on staged TS/JS/JSON, then re-stage
+STAGED=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.(ts|tsx|js|jsx|json)$' || true)
+[ -z "$STAGED" ] && exit 0
+
+echo "$STAGED" | xargs pnpm exec biome check --write --max-diagnostics=10 --reporter=summary
+echo "$STAGED" | xargs git add
