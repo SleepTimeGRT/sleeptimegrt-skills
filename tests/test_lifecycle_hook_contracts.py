@@ -122,3 +122,51 @@ class ClaudeAdapterTests(GitFixture):
         result = self.run_adapter()
         self.assertEqual(result.returncode, -15)
         self.assertEqual(result.stdout, "")
+
+
+class CodexAdapterTests(GitFixture):
+    def setUp(self) -> None:
+        super().setUp()
+        self.runtime_tmp = (Path(self.tempdir.name) / "runtime tmp").resolve()
+        self.runtime_tmp.mkdir(mode=0o700)
+        self.write("scripts/token-gate.sh", RUNNER.read_text(encoding="utf-8"), executable=True)
+        self.adapter = self.write(
+            ".codex/hooks/stop.sh",
+            (ASSETS / "hooks" / "stop-adapter-codex.sh").read_text(encoding="utf-8"),
+            executable=True,
+        )
+
+    def runtime_env(self) -> dict[str, str]:
+        env = os.environ.copy()
+        env["TMPDIR"] = str(self.runtime_tmp)
+        return env
+
+    def configure(self, stop_hook_cmd: str) -> None:
+        self.write("scripts/lifecycle-hook.conf", f"STOP_HOOK_CMD={shlex.quote(stop_hook_cmd)}\n")
+
+    def run_adapter(self) -> subprocess.CompletedProcess[str]:
+        return run("bash", str(self.adapter), cwd=self.repo, check=False, env=self.runtime_env())
+
+    def test_passing_validation_yields_the_allow_stop_contract(self) -> None:
+        self.configure("exit 0")
+        result = self.run_adapter()
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "{}\n")
+        self.assertEqual(result.stderr, "")
+
+    def test_failing_validation_yields_the_keep_working_contract(self) -> None:
+        self.configure("echo trouble; exit 1")
+        result = self.run_adapter()
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("FAIL", result.stderr)
+        self.assertNotIn("trouble", result.stderr)
+
+    def test_signal_killed_validation_terminates_the_adapter_via_the_same_signal(self) -> None:
+        # See the identical test in ClaudeAdapterTests for why: this is
+        # inherited token-gate.sh behavior, not a designed part of either
+        # runtime's contract.
+        self.configure("kill -TERM $$")
+        result = self.run_adapter()
+        self.assertEqual(result.returncode, -15)
+        self.assertEqual(result.stdout, "")
