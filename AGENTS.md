@@ -3,6 +3,20 @@
 Reusable, domain-neutral agent skills for engineering harness work across repositories.
 This repository is separate from product-specific skill collections such as `ait-skills`.
 
+This repo is meant to hold skills shared across the coding agents the user runs
+day to day: Claude Code, Codex, and Antigravity. Every skill under `skills/` is
+authored as a `SKILL.md` with YAML frontmatter (`name` + `description`) and
+progressive disclosure. Confirmed 2026-07-22 (see
+[vercel-labs/skills](https://github.com/vercel-labs/skills) and the
+[Agent Skills spec](https://agentskills.io)): this format is cross-tool as-is —
+Claude Code, Codex, and Antigravity (and 70+ other agents) all consume the same
+`SKILL.md` without conversion via the `npx skills` installer. The one caveat:
+some frontmatter features are Claude-Code-only (`allowed-tools` behavior
+details, `context: fork`, hooks) — avoid depending on those in a skill meant to
+be portable. See issue #2 for the installer-adoption discussion (catalog vs.
+flat layout, publishing this repo via `npx skills add`, plugin-marketplace
+distribution).
+
 ## Fresh agent protocol
 
 1. Read this file.
