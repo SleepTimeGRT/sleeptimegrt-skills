@@ -87,14 +87,14 @@ def test_delegation_references():
 def test_orca_evaluate_has_verdict_vocabulary():
     text = _read_skill("orca-evaluate")
     for term in ("PASS", "FAIL", "ESCALATE"):
-        assert term in text, f"orca-evaluate must define the '{term}' verdict"
+        assert re.search(rf"\b{term}\b", text), f"orca-evaluate must define the '{term}' verdict"
 
 
 def test_orca_workflow_never_generates_or_evaluates_itself():
     text = _read_skill("orca-workflow")
-    assert "생성하지도, 평가하지도 않는다" in text or (
-        "생성" in text and "평가" in text and "않는다" in text
-    ), "orca-workflow must state it never generates or evaluates directly"
+    assert "생성하지도, 평가하지도 않는다" in text, (
+        "orca-workflow must explicitly state it never generates or evaluates directly"
+    )
 
 
 @pytest.mark.parametrize("doc", WORKFLOWS_DOCS)
@@ -102,3 +102,6 @@ def test_workflows_docs_reference_new_skill_names(doc):
     text = (WORKFLOWS_DIR / doc).read_text()
     for term in RETIRED_SKILLS:
         assert term not in text, f"{doc}: stale reference '{term}'"
+    assert any(name in text for name in NEW_SKILLS), (
+        f"{doc}: should reference at least one of {NEW_SKILLS} after the migration"
+    )
