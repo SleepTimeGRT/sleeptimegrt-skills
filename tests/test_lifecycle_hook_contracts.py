@@ -264,3 +264,65 @@ class AuditSharedScriptTests(GitFixture):
         report = self.run_audit()
         self.assertTrue(report["compliant"])
         self.assertEqual({item["status"] for item in report["results"]}, {"INFO"})
+
+
+class AuditEntrypointAndDriftTests(GitFixture):
+    def write_claude_config(self, command: str) -> None:
+        self.write(
+            ".claude/settings.json",
+            json.dumps({"hooks": {"Stop": [{"hooks": [{"type": "command", "command": command}]}]}}),
+        )
+
+    def run_audit(self) -> dict:
+        result = run("python3", str(AUDIT), "--repo", str(self.repo), "--format", "json", cwd=self.repo, check=False)
+        return json.loads(result.stdout)
+
+    def test_flags_cwd_relative_command_without_a_project_root_marker(self) -> None:
+        self.write(".claude/hooks/stop.sh", "#!/usr/bin/env bash\nexit 0\n", executable=True)
+        self.write_claude_config("bash .claude/hooks/stop.sh")
+        report = self.run_audit()
+        self.assertTrue(
+            any(item["check"] == "claude:entrypoint" and item["status"] == "FAIL" for item in report["results"])
+        )
+
+    def test_project_root_marker_satisfies_the_entrypoint_check(self) -> None:
+        self.write(".claude/hooks/stop.sh", "#!/usr/bin/env bash\nexit 0\n", executable=True)
+        self.write_claude_config("bash ${CLAUDE_PROJECT_DIR}/.claude/hooks/stop.sh")
+        report = self.run_audit()
+        self.assertFalse(any(item["check"] == "claude:entrypoint" for item in report["results"]))
+
+    def test_flags_canonical_adapter_drift(self) -> None:
+        self.write(".claude/hooks/stop.sh", "#!/usr/bin/env bash\necho tampered\nexit 0\n", executable=True)
+        self.write_claude_config("bash ${CLAUDE_PROJECT_DIR}/.claude/hooks/stop.sh")
+        report = self.run_audit()
+        self.assertTrue(
+            any(item["check"] == "claude:canonical-hash" and item["status"] == "DRIFT" for item in report["results"])
+        )
+
+    def test_matches_canonical_adapter_hash(self) -> None:
+        self.write(
+            ".claude/hooks/stop.sh",
+            (ASSETS / "hooks" / "stop-adapter-claude.sh").read_text(encoding="utf-8"),
+            executable=True,
+        )
+        self.write_claude_config("bash ${CLAUDE_PROJECT_DIR}/.claude/hooks/stop.sh")
+        report = self.run_audit()
+        self.assertTrue(
+            any(item["check"] == "claude:canonical-hash" and item["status"] == "PASS" for item in report["results"])
+        )
+
+    def test_flags_mixed_json_and_nonstandard_exit_code(self) -> None:
+        self.write(
+            ".claude/hooks/stop.sh",
+            """
+            #!/usr/bin/env bash
+            echo '{"decision":"block","reason":"x"}'
+            exit 1
+            """,
+            executable=True,
+        )
+        self.write_claude_config("bash ${CLAUDE_PROJECT_DIR}/.claude/hooks/stop.sh")
+        report = self.run_audit()
+        self.assertTrue(
+            any(item["check"] == "claude:signaling" and item["status"] == "WARN" for item in report["results"])
+        )

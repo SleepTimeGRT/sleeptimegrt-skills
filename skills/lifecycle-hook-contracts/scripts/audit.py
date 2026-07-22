@@ -2,29 +2,44 @@
 """Read-only drift/compatibility audit for Stop hook lifecycle contracts.
 
 Compares a target repository's .claude/settings.json and .codex/hooks.json
-Stop hook registrations for the original bug class: a script shared
-verbatim across both runtime configs, or one that emits an unsupported
-`decision` value. Never modifies the target.
+Stop hook registrations against the canonical adapters bundled with this
+skill. Never modifies the target.
 
 Usage:
     python3 audit.py --repo /path/to/repo [--format text|json]
 
-Exit code 0 = compliant (INFO allowed), 1 = FAIL findings, 2 = usage error.
+Exit code 0 = compliant (INFO/WARN allowed), 1 = FAIL/DRIFT findings,
+2 = usage/environment error.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
 from pathlib import Path
 from typing import Any
 
+SKILL_DIR = Path(__file__).resolve().parent.parent
+ASSETS = SKILL_DIR / "assets"
+
+CANONICAL = {
+    ".claude/hooks/stop.sh": ASSETS / "hooks" / "stop-adapter-claude.sh",
+    ".codex/hooks/stop.sh": ASSETS / "hooks" / "stop-adapter-codex.sh",
+}
+
+PROJECT_DIR_MARKERS = ("${CLAUDE_PROJECT_DIR}", "$(git rev-parse --show-toplevel)")
 SCRIPT_TOKEN_RE = re.compile(r"([^\s\"']+\.(?:sh|py))")
 DECISION_RE = re.compile(r'"decision"\s*:\s*"([^"]*)"')
+EXIT_CODE_RE = re.compile(r"\bexit\s+(\d+)\b")
 
 FAILING = {"FAIL", "DRIFT"}
+
+
+def sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def find_stop_commands(data: Any) -> list[str]:
@@ -63,9 +78,16 @@ def find_stop_commands(data: Any) -> list[str]:
 
 
 def script_paths(commands: list[str]) -> set[str]:
+    # Marker prefixes are stripped from the whole command string before
+    # tokenizing, not from the extracted token afterward: the Codex-style
+    # marker `$(git rev-parse --show-toplevel)` contains internal spaces,
+    # which would otherwise split it across the token boundary.
     paths: set[str] = set()
     for command in commands:
-        for match in SCRIPT_TOKEN_RE.finditer(command):
+        stripped = command
+        for marker in PROJECT_DIR_MARKERS:
+            stripped = stripped.replace(marker + "/", "")
+        for match in SCRIPT_TOKEN_RE.finditer(stripped):
             paths.add(match.group(1).strip("\"'"))
     return paths
 
@@ -108,18 +130,24 @@ def check_repo(repo: Path) -> list[dict]:
             f"same script registered for both runtimes without per-runtime adapters: {sorted(shared)}",
         )
 
-    for runtime, commands, paths in (
-        ("claude", claude_commands, claude_paths),
-        ("codex", codex_commands, codex_paths),
+    for runtime, commands, paths, canonical_rel in (
+        ("claude", claude_commands, claude_paths, ".claude/hooks/stop.sh"),
+        ("codex", codex_commands, codex_paths, ".codex/hooks/stop.sh"),
     ):
         if not commands:
             continue
+
+        for command in commands:
+            if not any(marker in command for marker in PROJECT_DIR_MARKERS):
+                add(f"{runtime}:entrypoint", "FAIL", f"cwd-relative command, not rooted: {command!r}")
+
         for path in paths:
             installed = repo / path
             if not installed.is_file():
                 add(f"{runtime}:script", "MISSING", f"{path} referenced but not found")
                 continue
             content = installed.read_text(encoding="utf-8", errors="replace")
+
             for match in DECISION_RE.finditer(content):
                 value = match.group(1)
                 if value != "block":
@@ -128,6 +156,21 @@ def check_repo(repo: Path) -> list[dict]:
                         "FAIL",
                         f"{path} emits unsupported decision value {value!r} (only \"block\" is valid)",
                     )
+
+            exit_codes = {int(code) for code in EXIT_CODE_RE.findall(content)}
+            if "decision" in content and exit_codes - {0, 2}:
+                add(
+                    f"{runtime}:signaling",
+                    "WARN",
+                    f"{path} mixes JSON decision output with exit code(s) {sorted(exit_codes - {0, 2})}",
+                )
+
+            if path == canonical_rel:
+                canonical_asset = CANONICAL[canonical_rel]
+                if sha256(installed) == sha256(canonical_asset):
+                    add(f"{runtime}:canonical-hash", "PASS", "matches canonical adapter")
+                else:
+                    add(f"{runtime}:canonical-hash", "DRIFT", "differs from canonical adapter — re-apply or upstream")
 
     return results
 
