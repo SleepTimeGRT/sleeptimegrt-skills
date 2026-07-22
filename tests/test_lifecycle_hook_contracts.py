@@ -206,3 +206,61 @@ class AdapterCwdIndependenceTests(GitFixture):
             result = run("bash", str(linked / relative), cwd=linked, check=False)
             self.assertEqual(result.returncode, 0, msg=relative)
             self.assertEqual(result.stdout, "{}\n", msg=relative)
+
+
+class AuditSharedScriptTests(GitFixture):
+    def write_configs(self, claude_command: str | None, codex_command: str | None) -> None:
+        if claude_command is not None:
+            self.write(
+                ".claude/settings.json",
+                json.dumps({"hooks": {"Stop": [{"hooks": [{"type": "command", "command": claude_command}]}]}}),
+            )
+        if codex_command is not None:
+            self.write(
+                ".codex/hooks.json",
+                json.dumps({"Stop": [{"hooks": [{"type": "command", "command": codex_command}]}]}),
+            )
+
+    def run_audit(self) -> dict:
+        result = run("python3", str(AUDIT), "--repo", str(self.repo), "--format", "json", cwd=self.repo, check=False)
+        return json.loads(result.stdout)
+
+    def test_reproduces_the_original_approve_decision_bug(self) -> None:
+        self.write(
+            ".claude/hooks/lint-check.sh",
+            """
+            #!/usr/bin/env bash
+            echo '{"decision":"approve"}'
+            exit 0
+            """,
+            executable=True,
+        )
+        self.write_configs(
+            claude_command="bash .claude/hooks/lint-check.sh",
+            codex_command="bash .claude/hooks/lint-check.sh",
+        )
+        report = self.run_audit()
+        self.assertFalse(report["compliant"])
+        checks = [(item["check"], item["status"], item["detail"]) for item in report["results"]]
+        self.assertTrue(any(check == "cross-runtime-script" and status == "FAIL" for check, status, _ in checks))
+        self.assertTrue(
+            any(
+                check in ("claude:decision", "codex:decision") and status == "FAIL" and "approve" in detail
+                for check, status, detail in checks
+            )
+        )
+
+    def test_separate_per_runtime_scripts_do_not_trigger_shared_script_fail(self) -> None:
+        self.write(".claude/hooks/stop.sh", "#!/usr/bin/env bash\nexit 0\n", executable=True)
+        self.write(".codex/hooks/stop.sh", "#!/usr/bin/env bash\nexit 0\n", executable=True)
+        self.write_configs(
+            claude_command="bash .claude/hooks/stop.sh",
+            codex_command="bash .codex/hooks/stop.sh",
+        )
+        report = self.run_audit()
+        self.assertFalse(any(item["check"] == "cross-runtime-script" for item in report["results"]))
+
+    def test_no_stop_hook_registered_is_informational(self) -> None:
+        report = self.run_audit()
+        self.assertTrue(report["compliant"])
+        self.assertEqual({item["status"] for item in report["results"]}, {"INFO"})
