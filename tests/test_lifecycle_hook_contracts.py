@@ -170,3 +170,39 @@ class CodexAdapterTests(GitFixture):
         result = self.run_adapter()
         self.assertEqual(result.returncode, -15)
         self.assertEqual(result.stdout, "")
+
+
+class AdapterCwdIndependenceTests(GitFixture):
+    def setUp(self) -> None:
+        super().setUp()
+        self.write("scripts/token-gate.sh", RUNNER.read_text(encoding="utf-8"), executable=True)
+        self.claude_adapter = self.write(
+            ".claude/hooks/stop.sh",
+            (ASSETS / "hooks" / "stop-adapter-claude.sh").read_text(encoding="utf-8"),
+            executable=True,
+        )
+        self.codex_adapter = self.write(
+            ".codex/hooks/stop.sh",
+            (ASSETS / "hooks" / "stop-adapter-codex.sh").read_text(encoding="utf-8"),
+            executable=True,
+        )
+        self.write("scripts/lifecycle-hook.conf", "STOP_HOOK_CMD='exit 0'\n")
+        run("git", "config", "user.email", "fixture@example.test", cwd=self.repo)
+        run("git", "config", "user.name", "Fixture", cwd=self.repo)
+        run("git", "commit", "-qm", "fixture", cwd=self.repo)
+
+    def test_adapters_resolve_repo_root_from_a_nested_directory(self) -> None:
+        nested = self.repo / "packages" / "app"
+        nested.mkdir(parents=True)
+        for adapter in (self.claude_adapter, self.codex_adapter):
+            result = run("bash", str(adapter), cwd=nested, check=False)
+            self.assertEqual(result.returncode, 0, msg=str(adapter))
+            self.assertEqual(result.stdout, "{}\n", msg=str(adapter))
+
+    def test_adapters_resolve_repo_root_from_a_worktree_with_spaces(self) -> None:
+        linked = Path(self.tempdir.name) / "linked worktree"
+        run("git", "worktree", "add", "-q", "-b", "linked", str(linked), cwd=self.repo)
+        for relative in (".claude/hooks/stop.sh", ".codex/hooks/stop.sh"):
+            result = run("bash", str(linked / relative), cwd=linked, check=False)
+            self.assertEqual(result.returncode, 0, msg=relative)
+            self.assertEqual(result.stdout, "{}\n", msg=relative)
