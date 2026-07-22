@@ -326,3 +326,84 @@ class AuditEntrypointAndDriftTests(GitFixture):
         self.assertTrue(
             any(item["check"] == "claude:signaling" and item["status"] == "WARN" for item in report["results"])
         )
+
+
+class AuditEndToEndBothRuntimesTests(GitFixture):
+    def install_both_adapters(self) -> None:
+        self.write("scripts/token-gate.sh", RUNNER.read_text(encoding="utf-8"), executable=True)
+        self.write(
+            ".claude/hooks/stop.sh",
+            (ASSETS / "hooks" / "stop-adapter-claude.sh").read_text(encoding="utf-8"),
+            executable=True,
+        )
+        self.write(
+            ".codex/hooks/stop.sh",
+            (ASSETS / "hooks" / "stop-adapter-codex.sh").read_text(encoding="utf-8"),
+            executable=True,
+        )
+
+    def write_configs(self) -> None:
+        self.write(
+            ".claude/settings.json",
+            json.dumps(
+                {
+                    "hooks": {
+                        "Stop": [
+                            {
+                                "hooks": [
+                                    {
+                                        "type": "command",
+                                        "command": "bash ${CLAUDE_PROJECT_DIR}/.claude/hooks/stop.sh",
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                }
+            ),
+        )
+        self.write(
+            ".codex/hooks.json",
+            json.dumps(
+                {
+                    "Stop": [
+                        {
+                            "hooks": [
+                                {
+                                    "type": "command",
+                                    "command": "bash $(git rev-parse --show-toplevel)/.codex/hooks/stop.sh",
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ),
+        )
+
+    def run_audit(self) -> dict:
+        result = run("python3", str(AUDIT), "--repo", str(self.repo), "--format", "json", cwd=self.repo, check=False)
+        return json.loads(result.stdout)
+
+    def test_compliant_install_with_both_runtime_project_root_markers_passes_both_canonical_hash_checks(
+        self,
+    ) -> None:
+        self.install_both_adapters()
+        self.write_configs()
+        report = self.run_audit()
+        self.assertTrue(report["compliant"])
+        checks = {(item["check"], item["status"]) for item in report["results"]}
+        self.assertIn(("claude:canonical-hash", "PASS"), checks)
+        self.assertIn(("codex:canonical-hash", "PASS"), checks)
+
+    def test_tampered_codex_adapter_is_flagged_as_drift_alongside_a_compliant_claude_adapter(self) -> None:
+        self.install_both_adapters()
+        self.write_configs()
+        self.write(
+            ".codex/hooks/stop.sh",
+            (ASSETS / "hooks" / "stop-adapter-codex.sh").read_text(encoding="utf-8") + "# tampered\n",
+            executable=True,
+        )
+        report = self.run_audit()
+        self.assertFalse(report["compliant"])
+        checks = {(item["check"], item["status"]) for item in report["results"]}
+        self.assertIn(("codex:canonical-hash", "DRIFT"), checks)
