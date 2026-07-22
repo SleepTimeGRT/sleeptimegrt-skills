@@ -1,6 +1,6 @@
 ---
 name: model-agy
-description: agy(Gemini/Google) 모델·effort 용도 — coordinator·구현 워커, 그리고 quota 넉넉한 세 번째 cross-model 시각(evaluator)
+description: agy(Gemini/Google) 모델·effort 용도 — coordinator·구현 워커·evaluator 어디에나 쓸 수 있음, quota가 넉넉해 적합한 작업엔 우선 고려
 ---
 
 # agy (Gemini / Google)
@@ -21,4 +21,4 @@ launch: `agy -p '<지침 + diff·report 경로>' --model <token> --print-timeout
 
 스모크(2026-07-21, `agy -p`): `gemini-3.5-flash-high` 부팅·응답 exit 0. 모델 세대 교체 시 재검증 후 verified_at 갱신.
 
-quota·오류로 호출이 skip될 수 있다 — 그때의 대체 처리는 `orca-review-gate` 스킬이 소유한다.
+quota·오류로 호출이 skip될 수 있다 — 그때의 대체 처리는 `orca-evaluate`/`orca-task-runner` 스킬의 폴백 절이 소유한다.

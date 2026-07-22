@@ -8,7 +8,7 @@ Each provider document defines only:
 
 > model × effort → recommended usage
 
-Workflow orchestration (review gate, evaluator count, SDD waves, generator≠evaluator)은 `orca-review-gate`와 `orca-sdd`가 관리한다.
+Workflow orchestration (issue-drain, contract 협상, evaluate 판정, task-runner wave 구성)은 `orca-workflow`·`orca-task-runner`·`orca-evaluate`가 관리한다.
 
 ---
 

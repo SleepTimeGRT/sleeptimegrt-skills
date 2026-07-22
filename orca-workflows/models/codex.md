@@ -1,13 +1,13 @@
 ---
 name: model-codex
-description: Codex(OpenAI) 모델·effort 용도 — coordinator·구현 워커, 그리고 다른 provider가 저자인 코드의 cross-model evaluator
+description: Codex(OpenAI) 모델·effort 용도 — coordinator·구현 워커·evaluator 어디에나 쓸 수 있음(cross-model 강제 없음)
 ---
 
 # Codex (OpenAI)
 
 **verified_at: 2026-07-21**
 
-`gpt-5.6-*` 계열. coordinator·구현 워커로 쓰거나, 저자 provider가 Codex/OpenAI가 아닐 때 cross-model evaluator로 쓴다(자기 provider가 저자인 리뷰에는 evaluator로 쓰지 않는다 — self-review 회피, 규칙은 `orca-review-gate` 스킬).
+`gpt-5.6-*` 계열. coordinator·구현 워커·evaluator 어디에나 쓴다. evaluator로 쓸 때는 fresh-context(별도 세션)이기만 하면 되고 provider가 같아도 된다 — 원칙은 `orca-evaluate` 스킬.
 
 launch: `codex --model <id> -c model_reasoning_effort=<low|medium|high|xhigh>` (게이트 리뷰는 `-s workspace-write -a never`로 read-only 슬라이싱 승인 없이, headless는 `codex exec`).
 
