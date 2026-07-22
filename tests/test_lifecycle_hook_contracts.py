@@ -62,3 +62,63 @@ class ProtocolContractsDocTests(unittest.TestCase):
         self.assertIn("learn.chatgpt.com/docs/hooks", content)
         self.assertIn('"approve"', content)
         self.assertIn("antigravity.google/docs/hooks", content)
+
+
+class ClaudeAdapterTests(GitFixture):
+    def setUp(self) -> None:
+        super().setUp()
+        self.runtime_tmp = (Path(self.tempdir.name) / "runtime tmp").resolve()
+        self.runtime_tmp.mkdir(mode=0o700)
+        self.write("scripts/token-gate.sh", RUNNER.read_text(encoding="utf-8"), executable=True)
+        self.adapter = self.write(
+            ".claude/hooks/stop.sh",
+            (ASSETS / "hooks" / "stop-adapter-claude.sh").read_text(encoding="utf-8"),
+            executable=True,
+        )
+
+    def runtime_env(self) -> dict[str, str]:
+        env = os.environ.copy()
+        env["TMPDIR"] = str(self.runtime_tmp)
+        return env
+
+    def configure(self, stop_hook_cmd: str) -> None:
+        self.write("scripts/lifecycle-hook.conf", f"STOP_HOOK_CMD={shlex.quote(stop_hook_cmd)}\n")
+
+    def run_adapter(self) -> subprocess.CompletedProcess[str]:
+        return run("bash", str(self.adapter), cwd=self.repo, check=False, env=self.runtime_env())
+
+    def test_passing_validation_yields_the_allow_stop_contract(self) -> None:
+        self.configure("exit 0")
+        result = self.run_adapter()
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "{}\n")
+        self.assertEqual(result.stderr, "")
+
+    def test_failing_validation_yields_the_keep_working_contract(self) -> None:
+        self.configure("echo trouble; exit 1")
+        result = self.run_adapter()
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("FAIL", result.stderr)
+        self.assertNotIn("trouble", result.stderr)
+
+    def test_default_validation_command_is_verify_static(self) -> None:
+        content = self.adapter.read_text(encoding="utf-8")
+        self.assertIn('STOP_HOOK_CMD="pnpm verify:static"', content)
+
+    def test_signal_killed_validation_terminates_the_adapter_via_the_same_signal(self) -> None:
+        # Verified behavior, not a designed contract: token_gate_capture
+        # re-raises a signal that killed the wrapped command by signaling
+        # its own process (`kill -"$signal" "$$"`). Inside our `$(...)`
+        # capture, `$$` still names the adapter script's own PID (bash
+        # keeps `$$` pointing at the top-level shell inside command
+        # substitutions), so the adapter is torn down by that same signal
+        # before it ever reaches the `status=$?` line — it does NOT reach
+        # the exit-2 branch. This is inherited, unmodified behavior from
+        # `token-efficient-gates` (see Global Constraints — that engine is
+        # never forked) and is intentionally not translated into the
+        # exit-2 contract here; see "Explicitly out of scope" below.
+        self.configure("kill -TERM $$")
+        result = self.run_adapter()
+        self.assertEqual(result.returncode, -15)
+        self.assertEqual(result.stdout, "")
