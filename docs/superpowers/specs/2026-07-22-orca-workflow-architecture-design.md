@@ -9,7 +9,7 @@
 
 기존 `orca-sdd`가 해결했던 문제(superpowers의 subagent-driven-development가 Claude 서브에이전트만 spawn — 토큰 비효율)는 그대로 유지하되, 역할을 세 스킬로 분리한다.
 
-참조: `/Users/minchul/Projects/toss-space-goldrush/canon/_meta/references/anthropic-harness-design-long-running-apps.md` (Anthropic Labs, "Harness design for long-running application development") — planner/generator/evaluator 3-agent 구조, sprint contract 협상, evaluator는 cross-model이 아니라 fresh-context + skeptical 튜닝이 핵심 레버라는 근거.
+참조: [`references/anthropic-harness-design-long-running-apps.md`](references/anthropic-harness-design-long-running-apps.md) (Anthropic Labs, "Harness design for long-running application development" — 원본은 `toss-space-goldrush/canon/_meta/references/`에 있었으나, 이 레포가 SSoT이므로 여기에 복사해왔다) — planner/generator/evaluator 3-agent 구조, sprint contract 협상, evaluator는 cross-model이 아니라 fresh-context + skeptical 튜닝이 핵심 레버라는 근거.
 
 ## Glossary
 
