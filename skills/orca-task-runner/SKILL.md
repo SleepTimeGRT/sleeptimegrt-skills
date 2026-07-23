@@ -65,6 +65,10 @@ subtask가 worker_done을 보내기 전에 스스로 실행: typecheck, unit tes
 ```bash
 orca orchestration task-list --ready --brief --json
 orca orchestration dispatch --task <task_id> --to <impl_handle> --inject --json   # 최대 3 병렬
+# 할당 로그 — dispatch와 같은 블록에서 즉시 실행(누락 방지). orca 상태는 reset으로 소실될 수 있어
+# "어떤 subtask가 어떤 provider/model/effort로 갔는지"의 영속 기록은 이 파일이 유일하다.
+install -d -m 700 ~/.agents/orca-workflows/logs && printf '{"ts":"%s","event":"assign","skill":"orca-task-runner","role":"subtask-impl","issue":"<issue-num>","task_id":"<task_id>","subtask_type":"<전사|통합|아키텍처>","provider":"<provider>","model":"<model>","effort":"<effort>","terminal":"<impl_handle>","worktree":"<worktree 경로>"}\n' "$(date -u +%FT%TZ)" \
+  >> ~/.agents/orca-workflows/logs/assignments.jsonl && chmod 600 ~/.agents/orca-workflows/logs/assignments.jsonl
 ```
 
 - ⚠️ **`check --wait` 단독 대기 금지**: coordinator가 Orca 터미널 내부 세션이면 worker_done이 check 큐로 안 잡힐 수 있다(task 상태는 정상 갱신됨). 기본 대기 = `task-list --brief --json` 상태 폴링 또는 커밋/파일 존재 감시(20-30s 간격), `check --wait`는 보조.
@@ -96,3 +100,4 @@ Task 레벨 게이트(§6)를 통과하면 → task 전체 diff를 정리해 `or
 ## 폴백
 
 - orca 런타임 불가: `superpowers:subagent-driven-development`로 폴백 — 모델은 provider 문서의 같은 subtask 유형 등급을 Agent tool `model` 인자로. 폴백 발동은 사용자에게 보고.
+- 폴백에서도 §5의 할당 로그는 동일하게 남긴다 — `terminal` 필드만 subagent 식별자로 대체.
