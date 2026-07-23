@@ -1,7 +1,7 @@
 # Orca Generator/Evaluator Gate Rewiring — Design
 
 **Date**: 2026-07-23
-**Status**: Approved (brainstorming phase) — pending implementation plan
+**Status**: Implemented — `skills/orca-task-runner/SKILL.md`, `skills/orca-workflow/SKILL.md`, `skills/orca-evaluate/SKILL.md`, `orca-workflows/model-selection.md`
 
 ## Context
 

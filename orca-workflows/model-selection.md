@@ -145,13 +145,13 @@ Use this axis when the task is:
 
 Do **not** reach for this axis just because a stream produces a log. Deterministic, already-structured output (TAP-format pgTAP results, JUnit/JSON test reporters) doesn't need a model at all — parse it with a script. This axis is for cases where trusting a summary at face value is the risk (an agentic session under-reporting a silent failure, or a root cause hidden across several large logs), not a substitute for basic log parsing.
 
-**Exclusion — technical judgment calls do not belong on this axis, even when the calling session itself runs on it.** `orca-evaluate`'s own session defaults to this axis (Gemini) for exactly the reasons above, but its two actual judgment calls — sprint contract approval (§1) and diff code review (§2) of `skills/orca-evaluate/SKILL.md` — are both spawned out to a separate High Risk tier session instead. Don't let "the evaluator is already Gemini" become a reason to also let Gemini make either call — that's the tier this axis is explicitly weaker at (see benchmark table below).
+**Exclusion — technical judgment calls do not belong on this axis, even when the calling session itself runs on it.** `orca-evaluate`'s own session defaults to this axis (Gemini) for exactly the reasons above, but its two actual judgment calls — sprint contract approval (§1) and diff code review (§3) of `skills/orca-evaluate/SKILL.md` — are both spawned out to a separate High Risk tier session instead. Don't let "the evaluator is already Gemini" become a reason to also let Gemini make either call — that's the tier this axis is explicitly weaker at (see benchmark table below).
 
 | Provider | Model | Why |
 |----------|-------|-----|
 | Gemini (agy) | `gemini-3.6-flash` | OSWorld-Verified computer use 78.4%→83%; GDM-MRCR v2 128k long-context 77.3%→91.8% (released 2026-07-21). See `~/.agents/orca-workflows/models/agy.md` for the current smoke-test status before defaulting to it — a new model generation on this axis still needs the same launch verification as any other. |
 
-`orca-evaluate`'s own session, its agent-e2e stream, its integration-stream log re-check, and its final report synthesis (see `skills/orca-evaluate/SKILL.md`) are the current consumers of this axis. Its two spawned coding-agent sub-sessions (contract review, code review) are deliberately *not* consumers — those stay on the High Risk tier above.
+`orca-evaluate`'s own session (§2 agent-e2e test gate and its raw-trace re-check, plus §4 final report synthesis — see `skills/orca-evaluate/SKILL.md`) is the current consumer of this axis. e2e and pgTAP no longer flow through `orca-evaluate` at all (they're gated in `orca-task-runner` before handoff, deterministically, with no model involved). Its two spawned coding-agent sub-sessions (§1 contract review, §3 code review) are deliberately *not* consumers — those stay on the High Risk tier above.
 
 ---
 
