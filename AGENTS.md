@@ -51,4 +51,3 @@ For skills that inspect or modify hooks, verify commands, CI, shell scripts, or 
 
 - Do not run deploy, release, migration, seed, wipe, or other external-write commands merely to measure output.
 - Keep changes to different target repositories in independent commits.
-- Do not commit or push this repository unless the user explicitly requests it.
