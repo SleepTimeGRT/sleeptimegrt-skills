@@ -16,25 +16,45 @@
 
 ## 왜 이 스킬이 만들어졌는가 (재정의된 목적)
 
-사용자가 밝힌 4가지 요구사항을 원인-결과로 정리하면:
+**원 목표 ①(전파 방지)**: 개발 생명주기의 각 지점(commit → push → merge)에 적절한
+도구를 배치해서, secret 노출·정적 오류·e2e 실패가 걸러지지 않은 채 기본 브랜치(main)로
+전파되지 않게 하는 것. "적절한 지점"은 고정된 정답이 아니라 경험으로 찾아가는 것이므로,
+그 답을 레포마다 드리프트 없이 캐노니컬하게 공유하는 메커니즘(템플릿 + hash 기반
+drift audit)이 이 스킬의 핵심 가치다.
 
-1. **secret 노출 방지** — gitleaks 같은 도구로 agent의 실수를 기계적으로 막는다. 독립적 요구.
-2. **정적 검사(lint/format/typecheck)의 공통화** — 3개 파일럿(medicount, toss-samhaengsi,
-   toss-space-goldrush)이 지금까지 각자 다른 임시방편으로 같은 문제를 풀어왔다
-   (`references/policy-rationale.md`의 "Superseded arrangements" 참조: medicount는
-   husky+stamp, samhaengsi는 pre-merge-local.sh, goldrush는 매 push 풀 verify).
-   레포가 독립적으로 관리되다 보니 드리프트가 생기는 게 불편함의 핵심.
-3. **githook을 통한 기계적 강제** — 프롬프트/지침은 agent가 빼먹을 수 있지만 git hook은
-   무조건 실행된다(determinism). 이건 이 스킬 고유의 판단(훅 배치 결정)이다. 실행된 뒤의
+**원 목표 ②(병목 없는 solo-agent 처리량)**: 이 모든 검증을 사람이 매 PR의 병목이 되지
+않으면서, 빠르고 저렴한 피드백으로 수행한다. Solo developer가 여러 agent-driven
+레포를 동시에 굴리는 이상, "사람이 검토해야 머지된다"는 팀 규범은 그 유일한 사람을
+병목으로 만든다(`references/policy-rationale.md`의 "'A second human must approve'는
+팀 규범이라 solo operator에는 전이되지 않는다" 참조). 단계별로 빠른 피드백을 주는 것은
+재작업 비용을 줄이고, self-merge는 사람이 매 PR마다 개입하지 않아도 되게 한다. ②가
+안전하려면 ①이 최선 노력이 아니라 **보장**이어야 한다 — 이 조건이 3번 요구사항을 낳는다.
+
+이 두 목표에서 파생된 4가지 구체적 요구사항(도구 선택은 구현 디테일이지 목표 자체가
+아니다):
+
+1. **secret 노출 방지** (①에서 직접 도출) — gitleaks 같은 도구로 agent의 실수를
+   기계적으로 막는다. 가장 이른 지점(pre-commit)에 두는 것은 로컬 히스토리에 들어가기
+   전에 잡는 게 가장 강한 해석이라서다. 빠르므로 ②와도 충돌 없음.
+2. **정적 검사(lint/format/typecheck)의 3단 계층화** (①+② 둘 다 필요) — ①만으로는
+   premerge 한 곳에 다 몰아도 충분하다(머지가 안 되면 전파도 안 됨). pre-commit
+   autofix / pre-push static / premerge full로 쪼갠 이유는 ②(빠른 피드백이 재작업
+   비용을 줄인다는 원칙)다. 3개 파일럿(medicount, toss-samhaengsi, toss-space-goldrush)이
+   지금까지 각자 다른 임시방편으로 이 계층화를 따로 풀어왔다(`references/policy-rationale.md`의
+   "Superseded arrangements" 참조: medicount는 husky+stamp, samhaengsi는
+   pre-merge-local.sh, goldrush는 매 push 풀 verify) — 그 답을 레포마다 독립적으로
+   다시 찾다 보니 드리프트가 생긴 것이 ①의 캐노니컬 공유 메커니즘이 겨냥하는 문제.
+3. **githook을 통한 기계적 강제** (①의 "보장" 요건에서 도출, ②를 안전하게 만드는
+   전제조건) — 프롬프트/지침은 agent가 빼먹을 수 있지만 git hook은 무조건 실행된다.
+   self-merge(②)로 인해 외부 검토자가 없으므로, agent가 스스로 건너뛸 수 있는 체크는
+   "전파 방지"를 보장하지 못한다 — ①과 ②를 실제로 양립시키는 연결점. 실행된 뒤의
    출력량 압축은 별개로 `token-efficient-gates`의 메커니즘이다.
-4. **e2e를 merge gate로 두고 싶지만 remote CI 비용이 부담** — 무거운 검증을 로컬
-   premerge로 밀어넣었고, remote CI/branch protection이 없으니 머지를 막을 주체가
-   없어져 self-merge + gate-integrity 정책이 필요해졌다.
-
-공통 목표: **secret 노출·정적 오류·e2e 실패가 적절한 개발 생명주기 지점에서 걸러져
-기본 브랜치(main)로 전파되지 않게 하는 것**이며, "적절한 지점"은 고정된 정답이 아니라
-경험으로 찾아가는 것이므로, 그 답을 레포마다 드리프트 없이 캐노니컬하게 공유하는
-메커니즘(템플릿 + hash 기반 drift audit)이 이 스킬의 핵심 가치다.
+4. **e2e@premerge + self-merge** (①과 ②로 각각 분리 도출) — "e2e를 premerge에 둔다"는
+   ①에서 곧바로 나온다(무겁고 느리지만 결론적인 체크를 되돌릴 수 없는 행동 직전에
+   배치). 반면 "self-merge"는 remote CI 비용 제약만으로는 안 나온다 — 비용 제약은
+   "로컬에서 e2e 돌리고 사람이 최종 머지 클릭"으로도 풀리기 때문. self-merge가 실제로
+   필요한 이유는 ②(사람이 매 PR의 병목이 되면 안 됨)이고, 이게 안전한 이유는 3번의
+   gate-integrity 보장이 있기 때문이다.
 
 ## 세 스킬의 관계 — 처음부터 다시 설계해도 3분할이 나온다
 
@@ -59,6 +79,13 @@ description 하나가 세 트리거 패턴을 다 감당해야 해서 스킬 탐
 실제 정체성(특정 운영 프로필을 위한 opinionated 정책 패키지)을 안 드러낸다. git에만
 한정된 내용이 아니므로(개념은 어떤 VCS/워크플로우에도 적용 가능, 구현만 git 기반)
 `git-lifecycle-*`가 아니라 `lifecycle-gate-policy`로 확정.
+
+**이름 재평가**: 이 이름은 원 목표 ①(어느 지점에 배치할지)만 담고, ②(캐노니컬
+무drift 공유, self-merge)는 이름에 안 보인다는 한계가 있다. `canonical-lifecycle-gates`,
+`canonical-merge-gate-policy` 등 ②를 앞세우는 대안도 검토했으나, 트리거를 실제로
+결정하는 건 이름이 아니라 description이라는 원칙(형제 스킬들도 이름에 운영 프로필
+전체를 담지 않음)에 따라 `lifecycle-gate-policy`를 확정하고, ②는 아래 description
+문구가 담당한다.
 
 ### 범위
 
