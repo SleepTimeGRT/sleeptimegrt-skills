@@ -1,4 +1,4 @@
-<!-- harness-conventions: policy v1 — keep this marker line; the drift audit checks for it. -->
+<!-- lifecycle-gate-policy: policy v1 — keep this marker line; the drift audit checks for it. -->
 ## Harness policy (common across repositories)
 
 ### Verification gates — three layers
@@ -7,7 +7,7 @@
 |---|---|---|---|
 | `pre-commit` | every commit | gitleaks secret scan + biome auto-fix on staged files | auto-correction |
 | `pre-push` | every push | `pnpm verify:static` — typecheck + lint/format check + repo static lints. No tests. | fast block |
-| `scripts/premerge.sh` | right before squash merge | full `pnpm verify` + e2e (if configured) + cross-model review for code changes | final gate |
+| `scripts/premerge.sh` | right before squash merge | full `pnpm verify` + e2e (if configured) + review for code changes | final gate |
 
 `verify:static` must stay static: no test execution, no emulators, no network.
 Heavy verification is deliberately absent from hooks — it lives at the merge, where
@@ -19,7 +19,7 @@ branches only, never for a branch about to merge.
 - Squash merge only: `gh pr merge --squash --delete-branch`. Never `--merge`/`--rebase`.
 - **Self-merge**: the agent that authored a PR may merge it itself when
   `scripts/premerge.sh` exits PASS. For code changes this includes a clean
-  cross-model review (`orca-review-gate` skill), then `premerge.sh --review-done`.
+  review pass, then `premerge.sh --review-done`.
 - Merge one PR at a time. If `origin/main` moved after PASS, re-run premerge.
 - **Escalate to a human merge** (no self-merge) when: premerge reports PROTECTED
   (gate-integrity paths changed — hooks, premerge/token-gate scripts, biome config,
