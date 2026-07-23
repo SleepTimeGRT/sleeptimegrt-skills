@@ -47,6 +47,14 @@ For skills that inspect or modify hooks, verify commands, CI, shell scripts, or 
 - Compare the gate stages before and after a change so output refactoring cannot silently remove verification.
 - Run representative pilots before extracting a shared abstraction or applying changes across repositories.
 
+## Skill deployment
+
+This repo's skills are installed globally as commit-pinned copies (`~/.agents/skills/` +
+`~/.codex/skills/`, with `~/.claude/skills/` symlinking into `~/.agents/skills/`), not
+worktree symlinks — editing `skills/` does nothing until redeployed. After committing a
+skill change, run `scripts/deploy-skills.sh [skill-name ...]` (no args = all skills). It
+refuses dirty skills so the recorded commit never lies about the deployed content.
+
 ## Repository operations
 
 - Do not run deploy, release, migration, seed, wipe, or other external-write commands merely to measure output.
