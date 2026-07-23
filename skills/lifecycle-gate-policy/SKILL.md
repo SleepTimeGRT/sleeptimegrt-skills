@@ -24,7 +24,9 @@ Self-merge: the authoring agent may merge its own PR when `premerge.sh` passes
 (including `--review-done` after a clean review pass for code changes).
 `premerge.sh` exits `PROTECTED` when the PR touches gate-integrity paths
 (`.githooks/`, premerge/token-gate scripts, biome config, root package.json
-`scripts`) — those PRs are merged by a human. The design rule behind all of this:
+`scripts` — narrowable per repo to specific script keys via
+`PROTECTED_SCRIPT_KEYS`, default guards the whole block) — those PRs are merged
+by a human. The design rule behind all of this:
 a green gate must mean "the code is correct", never "the gate was weakened", so
 the gate is never writable by the agent it judges. When something bad ships,
 improve verify/e2e/review; do not revoke self-merge.
@@ -63,7 +65,9 @@ Audit first; apply only when the user asks. One repository per commit. Steps:
 2. Write `.githooks/worktree-links.conf` with the repo's actual gitignored
    env/secret paths (inspect the previous post-checkout hook or `.gitignore`).
 3. Fill `scripts/premerge.conf.sh`: set `E2E_CMD` if the repo has a merge-blocking
-   e2e suite; extend `PROTECTED_EXTRA_REGEX` for repo-specific gate tooling.
+   e2e suite; extend `PROTECTED_EXTRA_REGEX` for repo-specific gate tooling; optionally
+   set `PROTECTED_SCRIPT_KEYS` by tracing the repo's actual verify/premerge chain to the
+   script keys it calls (leave unset to keep guarding the whole `scripts` block).
 4. Wire package.json to the naming contract above. Compose `verify:static` from the
    repo's existing static stages; move test stages out of any previous pre-push into
    `verify`/premerge. Keep every previously-gated stage somewhere — compare the
