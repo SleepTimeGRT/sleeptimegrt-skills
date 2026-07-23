@@ -42,16 +42,19 @@ Rationale for deferring both here: this plan's blast radius is intentionally lim
 - [ ] **Step 1: Confirm starting state**
 
 ```bash
-test -d /Users/minchul/Projects/sleeptimegrt-skills/skills/harness-conventions && echo "source exists"
-test -e /Users/minchul/Projects/sleeptimegrt-skills/skills/lifecycle-gate-policy && echo "UNEXPECTED: target already exists" || echo "target path is free"
+cd "$(git rev-parse --show-toplevel)"
+test -d skills/harness-conventions && echo "source exists"
+test -e skills/lifecycle-gate-policy && echo "UNEXPECTED: target already exists" || echo "target path is free"
 ```
 
 Expected: `source exists` and `target path is free`.
 
+**Run every command in this task from the repo root of the worktree you were told to work from — never `/Users/minchul/Projects/sleeptimegrt-skills` (that is the main checkout on `main`; this plan runs inside an isolated worktree on its own branch). `$(git rev-parse --show-toplevel)` resolves correctly from either.**
+
 - [ ] **Step 2: Rename with git so history follows the files**
 
 ```bash
-cd /Users/minchul/Projects/sleeptimegrt-skills
+cd "$(git rev-parse --show-toplevel)"
 git mv skills/harness-conventions skills/lifecycle-gate-policy
 ```
 
@@ -938,7 +941,7 @@ This task has no source edits of its own; it proves Tasks 1-8 together produced 
 - [ ] **Step 1: Run the full test suite**
 
 ```bash
-cd /Users/minchul/Projects/sleeptimegrt-skills
+cd "$(git rev-parse --show-toplevel)"
 uv run --with pytest pytest tests/ -q
 ```
 
@@ -947,7 +950,7 @@ Expected: `38 passed` (same total as the pre-flight baseline — Task 8 moved 11
 - [ ] **Step 2: Repo-wide grep sweep for stale references**
 
 ```bash
-cd /Users/minchul/Projects/sleeptimegrt-skills
+cd "$(git rev-parse --show-toplevel)"
 grep -rln "harness-conventions" . --include="*.md" --include="*.py" --include="*.sh" --include="*.conf" 2>/dev/null | grep -v "docs/superpowers/specs/"
 grep -rn "orca-review-gate\|cross-model" skills/lifecycle-gate-policy/ 2>/dev/null
 ```
@@ -968,7 +971,8 @@ Expected: both commands print the identical string `lifecycle-gate-policy: polic
 - [ ] **Step 4: Build a disposable fixture repo and run `audit.py` end-to-end**
 
 ```bash
-SKILL_DIR=/Users/minchul/Projects/sleeptimegrt-skills/skills/lifecycle-gate-policy
+cd "$(git rev-parse --show-toplevel)"
+SKILL_DIR="$(pwd)/skills/lifecycle-gate-policy"
 FIXTURE=/private/tmp/claude-501/-Users-minchul-Projects-sleeptimegrt-skills/d7851cfa-3123-4930-8104-4e857942690c/scratchpad/lgp-fixture
 
 rm -rf "$FIXTURE"
@@ -1014,6 +1018,7 @@ rm -rf "$FIXTURE"
 This does not modify the pilot repo. Its only purpose is to confirm `audit.py` still runs correctly from its new path and that the drift it reports matches exactly what Tasks 1-8 are expected to introduce — nothing more, nothing less.
 
 ```bash
+cd "$(git rev-parse --show-toplevel)"
 python3 skills/lifecycle-gate-policy/scripts/audit.py --repo /Users/minchul/Projects/medicount
 ```
 
