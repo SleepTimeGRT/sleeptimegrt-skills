@@ -1,6 +1,6 @@
 # Policy rationale — decision record (2026-07-21)
 
-Why each rule in the harness-conventions policy exists. Claims from external
+Why each rule in this policy exists. Claims from external
 sources carry provenance: **[fetched]** = page read directly during the research
 session (2026-07-21); **[snippet]** = search-result summary only.
 
@@ -49,12 +49,14 @@ below would flip; do not transplant this policy without re-checking the profile.
   removing tests or skipping lint steps to pass CI (GitHub blog, 2026-05-07
   [fetched]); reward hacking of the measuring function (o3 example [snippet]);
   same-model review sharing correlated blind spots (Vaughan, 2026-05-24
-  [fetched]) — mitigated here by the review being cross-model.
+  [fetched]) — mitigated here by fresh-context and a skeptical review prompt,
+  not by cross-provider separation (this repo's `/advisor` shows same-provider
+  review is effective too).
 - "Each PR green ≠ the combination is coherent" (ctx.rs merge-queue-for-agents
   [snippet]): hence premerge requires the branch to contain latest origin/main,
   merges are serialized, and periodic architecture reviews watch cross-PR drift.
 - User decision (2026-07-21): when a bad change ships, the response is to improve
-  verify/e2e/review — never to revoke self-merge. Cross-model review is required
+  verify/e2e/review — never to revoke self-merge. A review pass is required
   for code changes only; docs-only PRs pass on verify(+e2e) to keep trivial-PR
   throughput and token cost sane.
 

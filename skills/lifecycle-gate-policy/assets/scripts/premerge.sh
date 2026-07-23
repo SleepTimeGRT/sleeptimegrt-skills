@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# harness-conventions: canonical scripts/premerge.sh v1 — do not hand-edit in the
+# lifecycle-gate-policy: canonical scripts/premerge.sh v1 — do not hand-edit in the
 # target repository; change the copy in sleeptimegrt-skills and re-apply.
 #
 # The merge gate. Run from the PR branch's worktree before `gh pr merge --squash`.
@@ -10,8 +10,8 @@
 #   0  PASS — merge allowed
 #   2  precondition failed (dirty tree / behind default branch / empty diff)
 #   3  PROTECTED — diff touches gate-integrity paths; a human must merge this PR
-#   4  REVIEW — code changes present and --review-done not given; run the
-#      cross-model review gate first, then re-run with --review-done
+#   4  REVIEW — code changes present and --review-done not given; run your
+#      review process first, then re-run with --review-done
 #   *  verify/e2e failure (their exit codes pass through)
 set -euo pipefail
 
@@ -89,12 +89,12 @@ if [ -n "$PROTECTED_HITS" ]; then
   exit 3
 fi
 
-# ---- 3. cross-model review requirement ----------------------------------------
+# ---- 3. review requirement ----------------------------------------------------
 CODE_CHANGES=$(printf '%s\n' "$CHANGED" | grep -Ev "$REVIEW_EXEMPT_REGEX" || true)
 if [ -n "$CODE_CHANGES" ] && [ "$REVIEW_DONE" -ne 1 ]; then
   CODE_COUNT=$(printf '%s\n' "$CODE_CHANGES" | wc -l | tr -d ' ')
   printf '[premerge] REVIEW required — %s code file(s) changed\n' "$CODE_COUNT"
-  printf '[premerge] run the cross-model review gate (orca-review-gate), resolve blocking findings,\n'
+  printf '[premerge] resolve blocking findings from your review process,\n'
   printf '[premerge] then re-run: scripts/premerge.sh --review-done\n'
   exit 4
 fi

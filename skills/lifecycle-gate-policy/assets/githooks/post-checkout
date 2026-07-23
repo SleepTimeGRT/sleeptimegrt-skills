@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# harness-conventions: canonical .githooks/post-checkout v1 — do not hand-edit in the
+# lifecycle-gate-policy: canonical .githooks/post-checkout v1 — do not hand-edit in the
 # target repository; change the copy in sleeptimegrt-skills and re-apply.
 #
 # post-checkout: when a new linked worktree is created (git worktree add), symlink

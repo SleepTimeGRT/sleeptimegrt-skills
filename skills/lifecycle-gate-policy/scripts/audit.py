@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read-only drift audit for the harness-conventions policy.
+"""Read-only drift audit for the lifecycle-gate-policy skill.
 
 Compares a target repository against the canonical assets bundled with this
 skill and the package-script naming contract. Never modifies the target.
@@ -38,7 +38,7 @@ CONFIG_FILES = {
 }
 
 REQUIRED_SCRIPTS = ("verify", "verify:static", "premerge")
-POLICY_MARKER = "harness-conventions: policy v1"
+POLICY_MARKER = "lifecycle-gate-policy: policy v1"
 
 LEGACY = {
     ".husky": "husky hook directory",
