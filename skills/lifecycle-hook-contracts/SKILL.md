@@ -1,6 +1,6 @@
 ---
 name: lifecycle-hook-contracts
-description: 'Cross-runtime contract, canonical adapters, and drift audit for agent lifecycle hooks shared between Claude Code and Codex, starting with the Stop hook. Use whenever a repo wires the same or related script into both .claude/settings.json and .codex/hooks.json, when a Stop hook reports invalid JSON output or fails after a cwd change, or before hand-editing .claude/hooks/stop.sh or .codex/hooks.json in a repository that follows this convention. Excludes Git-native hooks (harness-conventions), output-volume compaction (token-efficient-gates), and remote CI (remote-ci-economics).'
+description: 'Cross-runtime contract, canonical adapters, and drift audit for agent lifecycle hooks shared between Claude Code and Codex, starting with the Stop hook. Use whenever a repo wires the same or related script into both .claude/settings.json and .codex/hooks.json, when a Stop hook reports invalid JSON output or fails after a cwd change, or before hand-editing .claude/hooks/stop.sh or .codex/hooks.json in a repository that follows this convention. Excludes Git-native hooks (lifecycle-gate-policy), output-volume compaction (token-efficient-gates), and remote CI (remote-ci-economics).'
 ---
 
 # Lifecycle Hook Contracts
@@ -22,11 +22,11 @@ regression this skill exists to catch).
 Both `assets/hooks/stop-adapter-claude.sh` and
 `assets/hooks/stop-adapter-codex.sh` implement exactly this, wrapping the
 repo's existing `scripts/token-gate.sh` (from `token-efficient-gates`,
-installed by `harness-conventions`) unmodified. Neither adapter emits a
+installed by `lifecycle-gate-policy`) unmodified. Neither adapter emits a
 `decision` field — no runtime-specific JSON schema is needed for the
 Stop-only scope this skill covers.
 
-**Dependency**: the target repo must already have `harness-conventions`
+**Dependency**: the target repo must already have `lifecycle-gate-policy`
 applied (`scripts/token-gate.sh` and a `verify:static` package script must
 exist). This skill does not ship its own copy of the capture engine.
 
@@ -61,7 +61,7 @@ Audit first; apply only when the user asks. One repository per commit.
 
 ## Boundaries
 
-- **harness-conventions** owns Git-native hooks (pre-commit/pre-push/premerge)
+- **lifecycle-gate-policy** owns Git-native hooks (pre-commit/pre-push/premerge)
   only; it does not gain a lifecycle-hook asset. This skill owns agent
   lifecycle hooks — Stop today, other events only if a real need appears.
 - **token-efficient-gates** owns `scripts/token-gate.sh`; this skill wraps it

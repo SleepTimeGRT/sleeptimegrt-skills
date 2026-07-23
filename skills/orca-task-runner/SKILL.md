@@ -35,7 +35,7 @@ description: Use when generating the implementation for one task (issue) — pro
 orca orchestration task-create --spec "<subtask 본문 + 아래 필수 항목>" --deps '["task_xxx"]' --json
 ```
 
-subtask spec 필수 항목: ①구체적 작업 내용(코드 블록 포함 그대로) ②커밋 대상 브랜치·worktree 명시 ③resolved provider/model/effort 기록 ④"막히면 ask로 blocking 질문" ⑤"완료 시 preamble 지시대로 worker_done(payload에 filesModified)" ⑥**병렬 커밋 안전 규칙**(같은 worktree 공유): `git add` 명시 경로만·`git commit -m "<msg>" -- <files>` pathspec 필수·index.lock 재시도 — 2026-07-20 #211 파일럿에서 3-워커 병렬 커밋 충돌 0 실증.
+subtask spec 필수 항목: ①구체적 작업 내용(코드 블록 포함 그대로) ②커밋 대상 브랜치·worktree 명시 ③resolved provider/model/effort 기록 ④"막히면 ask로 blocking 질문" ⑤"완료 시 preamble 지시대로 worker_done(payload에 filesModified)" ⑥**병렬 커밋 안전 규칙**(같은 worktree를 공유하는 병렬 워커가 서로의 미완성 변경을 덮어쓰지 않도록): `git add` 명시 경로만·`git commit -m "<msg>" -- <files>` pathspec 필수·index.lock 재시도.
 
 ## 3. Wave 준비
 
@@ -67,7 +67,7 @@ orca orchestration task-list --ready --brief --json
 orca orchestration dispatch --task <task_id> --to <impl_handle> --inject --json   # 최대 3 병렬
 ```
 
-- ⚠️ **`check --wait` 단독 대기 금지** (2026-07-20 #211 파일럿 실측): coordinator가 Orca 터미널 내부 세션이면 worker_done이 check 큐로 안 잡힐 수 있다(task 상태는 정상 갱신됨). 기본 대기 = `task-list --brief --json` 상태 폴링 또는 커밋/파일 존재 감시(20-30s 간격), `check --wait`는 보조.
+- ⚠️ **`check --wait` 단독 대기 금지**: coordinator가 Orca 터미널 내부 세션이면 worker_done이 check 큐로 안 잡힐 수 있다(task 상태는 정상 갱신됨). 기본 대기 = `task-list --brief --json` 상태 폴링 또는 커밋/파일 존재 감시(20-30s 간격), `check --wait`는 보조.
 - timeout·`count:0` = 체크포인트. `terminal read`로 생사 확인, 활동 중이면 계속 대기.
 - decision_gate(워커 ask) → 판단 가능하면 `reply`, 불가하면 `orca-workflow`에 에스컬레이션.
 - worker_done 유실 복구: 커밋/산출물 확인 + `task-update --status completed` 수동 복구, 기록.
