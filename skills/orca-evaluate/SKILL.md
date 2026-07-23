@@ -1,15 +1,11 @@
 ---
 name: orca-evaluate
-description: Use when evaluating a completed task's diff before merge — reviews the orca-task-runner implementation contract against the issue's Acceptance criteria, runs a fresh-context code review (same provider is fine, no cross-model requirement) plus e2e/docker tests, and returns PASS, FAIL-with-feedback, or ESCALATE. Self-relative.
+description: Use when evaluating a completed task's diff before merge — reviews the orca-task-runner implementation contract against the issue's Acceptance criteria, runs a fresh-context code review plus e2e/docker tests, and returns PASS, FAIL-with-feedback, or ESCALATE. Self-relative.
 ---
 
 # Orca Evaluate
 
 task(issue) 하나를 **1회** 평가한다(subtask마다 하지 않음). 코드를 쓰지 않는다 — `orca-task-runner`가 생성한 결과만 판단한다.
-
-## 왜 cross-model이 아닌가
-
-이전 설계는 evaluator가 생성자와 다른 provider여야 한다고 강제했다. 지금은 그 규칙을 버렸다 — Claude Code의 `/advisor`가 **같은 provider**로도 self-review 편향을 깨는 데 효과가 있다는 것이 근거다. self-review 문제를 깨는 진짜 레버는 provider가 다른 게 아니라 **다른 세션(fresh context) + skeptical하게 튜닝된 프롬프트**다. evaluator는 어떤 provider든 상관없다 — coordinator·generator와 별도 세션이기만 하면 된다.
 
 ## 1. Contract 검토 (evaluator 역할)
 
