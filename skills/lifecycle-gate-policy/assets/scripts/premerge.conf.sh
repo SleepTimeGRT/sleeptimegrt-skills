@@ -12,3 +12,10 @@
 
 # Repo-specific additions to the gate-integrity protected set.
 #PROTECTED_EXTRA_REGEX='^tools/spec-trace\.mjs$'
+
+# Narrow the package.json "scripts" gate-integrity check to only these keys (space-
+# separated) instead of the whole scripts block. Trace the actual verify/premerge chain
+# to derive the list — a synthesized key like "verify:static" only guards its own value,
+# not the leaf keys it calls, so list leaves too. Leave unset/empty to keep guarding the
+# entire scripts block (safe default; matches pre-PROTECTED_SCRIPT_KEYS behavior).
+#PROTECTED_SCRIPT_KEYS="verify verify:guides check-types premerge prepare e2e"

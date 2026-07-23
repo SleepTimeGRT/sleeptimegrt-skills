@@ -24,6 +24,7 @@ VERIFY_CMD="pnpm verify"
 E2E_CMD="" # e.g. "pnpm test:e2e:ci"; empty = repo has no merge-blocking e2e
 REVIEW_EXEMPT_REGEX='(^|/)docs/|\.(md|mdx|txt)$'
 PROTECTED_EXTRA_REGEX="" # repo-specific additions to the protected set
+PROTECTED_SCRIPT_KEYS="" # space-separated package.json script keys to guard; empty = guard the whole scripts block
 CONF="$REPO_ROOT/scripts/premerge.conf.sh"
 [ -f "$CONF" ] && . "$CONF"
 
@@ -72,11 +73,35 @@ if [ -n "$PROTECTED_EXTRA_REGEX" ]; then
   PROTECTED_HITS=$(printf '%s\n%s\n' "$PROTECTED_HITS" "$EXTRA_HITS" | sed '/^$/d' | sort -u)
 fi
 
-# The root package.json "scripts" block defines the verify chain itself.
+# The root package.json "scripts" block defines the verify chain itself. By default the
+# whole block is guarded (all-or-nothing). A repo can narrow this to only the script keys
+# its own gate chain actually calls via PROTECTED_SCRIPT_KEYS (see premerge.conf.sh) — e.g.
+# adding an unrelated e2e project entry no longer trips PROTECTED, but touching a guarded
+# key still does. Guarding a synthesized key (e.g. "verify:static") only catches changes to
+# that key's own value, not the leaf keys it calls into — list the leaves too.
 if printf '%s\n' "$CHANGED" | grep -qx 'package.json'; then
-  OLD_SCRIPTS=$(git show "origin/$DEFAULT_BRANCH:package.json" |
-    node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>console.log(JSON.stringify(JSON.parse(d).scripts||{})))')
-  NEW_SCRIPTS=$(node -e 'console.log(JSON.stringify(require("./package.json").scripts||{}))')
+  if [ -n "$PROTECTED_SCRIPT_KEYS" ]; then
+    OLD_SCRIPTS=$(git show "origin/$DEFAULT_BRANCH:package.json" |
+      PROTECTED_SCRIPT_KEYS="$PROTECTED_SCRIPT_KEYS" node -e '
+        let d="";
+        process.stdin.on("data",c=>d+=c).on("end",()=>{
+          const scripts = JSON.parse(d).scripts || {};
+          const keys = process.env.PROTECTED_SCRIPT_KEYS.split(/\s+/).filter(Boolean).sort();
+          const picked = {};
+          for (const k of keys) picked[k] = scripts[k];
+          console.log(JSON.stringify(picked));
+        })')
+    NEW_SCRIPTS=$(PROTECTED_SCRIPT_KEYS="$PROTECTED_SCRIPT_KEYS" node -e '
+      const scripts = require("./package.json").scripts || {};
+      const keys = process.env.PROTECTED_SCRIPT_KEYS.split(/\s+/).filter(Boolean).sort();
+      const picked = {};
+      for (const k of keys) picked[k] = scripts[k];
+      console.log(JSON.stringify(picked));')
+  else
+    OLD_SCRIPTS=$(git show "origin/$DEFAULT_BRANCH:package.json" |
+      node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>console.log(JSON.stringify(JSON.parse(d).scripts||{})))')
+    NEW_SCRIPTS=$(node -e 'console.log(JSON.stringify(require("./package.json").scripts||{}))')
+  fi
   if [ "$OLD_SCRIPTS" != "$NEW_SCRIPTS" ]; then
     PROTECTED_HITS=$(printf '%s\npackage.json (scripts block)\n' "$PROTECTED_HITS" | sed '/^$/d')
   fi
