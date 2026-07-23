@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# harness-conventions: canonical scripts/token-gate.sh v1 — do not hand-edit in the
+# lifecycle-gate-policy: canonical scripts/token-gate.sh v1 — do not hand-edit in the
 # target repository; change the copy in sleeptimegrt-skills and re-apply.
 # Source this file from a non-interactive repository gate.
 
