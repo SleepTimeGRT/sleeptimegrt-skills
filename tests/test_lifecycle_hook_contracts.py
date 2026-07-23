@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = ROOT / "skills" / "lifecycle-hook-contracts"
 ASSETS = SKILL_ROOT / "assets"
 AUDIT = SKILL_ROOT / "scripts" / "audit.py"
-RUNNER = ROOT / "skills" / "token-efficient-gates" / "assets" / "token-gate.sh"
+RUNNER = ROOT / "skills" / "lifecycle-gate-policy" / "assets" / "scripts" / "token-gate.sh"
 
 
 def run(
