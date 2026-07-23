@@ -1,6 +1,6 @@
 ---
 name: orca-workflow
-description: Use when picking up a GitHub issue and driving it through its full lifecycle — branches on issue type (epic vs task), runs issue-drain validation for epics, builds an issue-graph task-queue, and for each task relays the orca-task-runner/orca-evaluate contract negotiation, routes PASS/FAIL/ESCALATE, and escalates to a human inspection checkpoint. Never generates or evaluates code directly — pure orchestration, kept context-light. Use for "이슈 가져와", "이슈 처리해", "epic 실행해" style requests. Self-relative.
+description: Use when picking up a GitHub issue and driving it through its full lifecycle — branches on issue type (epic vs task), runs issue-drain validation for epics, builds an issue-graph task-queue, and for each task relays the orca-task-runner/orca-evaluate contract negotiation, routes PASS/FAIL/ESCALATE (and GATE_FAIL straight to inspecting), and escalates to a human inspection checkpoint. Never generates or evaluates code directly — pure orchestration, kept context-light. Use for "이슈 가져와", "이슈 처리해", "epic 실행해" style requests. Self-relative.
 ---
 
 # Orca Workflow
@@ -45,7 +45,7 @@ orca terminal create --worktree active --title task-run-<n> \
 orca orchestration task-create --spec "<issue 번호 + 제안서/구현 모드>" --json
 orca orchestration dispatch --task <task_id> --to <run-handle> --inject --json
 
-# evaluate 호출 — 기본 provider는 agy(Gemini): 롱컨텍스트로 통합 테스트 스트림을 직접 실행·판독하는 게
+# evaluate 호출 — 기본 provider는 agy(Gemini): 롱컨텍스트로 agent e2e 실행·판독과 리포트 합성이
 # 이 스킬의 핵심 업무라서다(`~/.agents/orca-workflows/model-selection.md`의 Computer Use / Long-Context 축,
 # `skills/orca-evaluate/SKILL.md` §0 참고). 이 evaluate 세션이 diff 자체를 판단하지는 않는다 —
 # 그건 evaluate가 내부에서 스폰하는 별도 code-reviewer 세션(강한 reasoning 모델)의 몫이다.
