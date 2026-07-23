@@ -67,7 +67,7 @@ find skills/lifecycle-gate-policy -type f | sort
 
 Expected: `git status --short` shows 12 lines of the form `R  skills/harness-conventions/<f> -> skills/lifecycle-gate-policy/<f>`. The `find` output lists the same 12 files as before (SKILL.md, assets/agents-policy.md, assets/githooks/{post-checkout,pre-commit,pre-push,worktree-links.conf}, assets/scripts/{premerge.conf.sh,premerge.sh,token-gate.sh}, references/policy-rationale.md, scripts/audit.py), now under `skills/lifecycle-gate-policy/`.
 
-Do not commit. Leave the rename staged.
+Commit this rename on this branch (see Global Constraints — per-task commits on `worktree-lifecycle-gate-policy-rename` are authorized; this line originally said "do not commit," written before that authorization was granted).
 
 ---
 
@@ -1046,14 +1046,17 @@ medicount: DRIFT — 1 failing check(s)
 
 If any check other than the five listed `DRIFT`s and the `AGENTS.md policy` `WARN` changes status, stop — an unintended edit leaked into a file this plan did not intend to touch.
 
-- [ ] **Step 7: Report final state — do not commit**
+- [ ] **Step 7: Report final branch state — this step itself makes no commit**
+
+By this point Tasks 1-8 have each already committed their own work on branch `worktree-lifecycle-gate-policy-rename` (per-task commits on this branch are authorized — see Global Constraints). This step is read-only verification; it adds nothing new to commit.
 
 ```bash
+git log --oneline <task-1-base>..HEAD
 git status --short
-git diff --stat
+git diff --stat main...HEAD
 ```
 
-Expected: `git status --short` shows the Task 1 renames (`R`) plus modifications (`M`) to every file edited in Tasks 2-8 (including `M tests/test_token_efficient_gates.py`), the deletion (`D`) of `token-efficient-gates/assets/token-gate.sh`, and one untracked/new file (`??` or `A`) at `tests/test_lifecycle_gate_policy.py`. Nothing is committed. Present this output to the user and wait for an explicit go-ahead before running `git commit` — per this repo's `AGENTS.md`, committing is never implied by finishing the work.
+Expected: `git log` shows one commit per task (8 commits, Tasks 1-8, plus any fix-round commits); `git status --short` is empty (everything from Tasks 1-8 is already committed — the deletion of `token-efficient-gates/assets/token-gate.sh` and the new `tests/test_lifecycle_gate_policy.py` file are both inside those commits, not left uncommitted); `git diff --stat main...HEAD` shows the full accumulated diff against `main`. Present this to the user. Per this repo's `AGENTS.md` and this plan's Global Constraints, the commits made on this branch do not require separate approval (already authorized), but pushing this branch or merging/applying it to `main` still requires an explicit go-ahead — handled by `superpowers:finishing-a-development-branch` after this task, not by this step.
 
 ---
 
