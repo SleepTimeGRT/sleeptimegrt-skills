@@ -1,7 +1,9 @@
 # sleeptimegrt-skills — agent map
 
 Reusable, domain-neutral agent skills for engineering harness work across repositories.
-This repository is separate from product-specific skill collections such as `ait-skills`.
+This repo's skills are modeled on general-purpose, cross-tool skill collections like
+[obra/superpowers](https://github.com/obra/superpowers) and
+[mattpocock/skills](https://github.com/mattpocock/skills).
 
 This repo is meant to hold skills shared across the coding agents the user runs
 day to day: Claude Code, Codex, and Antigravity. Every skill under `skills/` is
@@ -21,27 +23,10 @@ distribution).
 
 1. Read this file.
 2. Read `HANDOFF.md` when it exists; it contains the current work state and verified evidence.
-3. For skill creation or substantial skill changes, use the available `skill-creator` guidance before editing.
+3. For skill creation or substantial skill changes, use the `skill-creator` skill before editing. Note: it's a
+   Claude Code skill, so its packaging advice may not be tuned for Codex/Antigravity — sanity-check anything
+   Claude-Code-specific it suggests against the cross-tool goal above.
 4. Load only the target skill and the resources directly required for the task.
-
-## Layout
-
-- `skills/<skill-name>/SKILL.md` — skill entry point.
-- `skills/<skill-name>/scripts/` — deterministic audit, scaffold, or validation programs.
-- `skills/<skill-name>/references/` — detailed guidance loaded only when needed.
-- `skills/<skill-name>/assets/` — templates copied into target repositories.
-- `tests/` — fixture-based tests for bundled scripts and templates, when introduced.
-
-Create directories lazily. Do not add empty framework folders before a skill needs them.
-
-## Skill rules
-
-- Keep `SKILL.md` concise and procedural. Put trigger conditions in its YAML `description`.
-- Use lowercase kebab-case skill names. Keep only `name` and `description` in frontmatter.
-- Prefer executable scripts for repeated, deterministic operations instead of reproducing shell snippets in prompts.
-- Keep target-repository mutations explicit and reviewable. Audit first; apply only when requested.
-- Do not make a user-global runtime dependency necessary for a generated repository to function.
-- Do not place auxiliary README, changelog, or process-history files inside a skill folder.
 
 ## Gate-output design constraints
 
