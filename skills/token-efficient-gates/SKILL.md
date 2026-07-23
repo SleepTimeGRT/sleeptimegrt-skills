@@ -85,6 +85,8 @@ The normal workflow changes no tracked target file. Install or edit a repo-local
 
 When applying a persistent adapter, preserve stage order, conditions, exit codes, signals, and fail-fast or aggregate-failure behavior. Never make the target repository depend on this skills repository at runtime.
 
+If a persistent in-repo adapter is already needed, reference the `token-gate.sh` that `lifecycle-gate-policy` ships instead of authoring a second copy here.
+
 ## Stop at the remote boundary
 
 Do not review or optimize GitHub Actions minutes, hosted runner billing, workflow triggers, matrices, concurrency, caches, services, or artifacts with this skill. Those belong to the separate `remote-ci-economics` skill.
