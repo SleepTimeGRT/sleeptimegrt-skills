@@ -1,9 +1,9 @@
 ---
-name: harness-conventions
-description: 'Canonical cross-repository development-harness policy, drift audit, and apply templates: three-layer local gates (pre-commit secrets+autofix, static-only pre-push, full premerge verify+e2e), agent self-merge rules with mechanical gate-integrity protection, .githooks templates, and a package-script naming contract. Use whenever the user asks to review, compare, unify, audit, standardize, or set up a repository''s development harness, git hooks, verify chains, merge or self-merge policy, premerge gates, or worktree conventions — and before hand-editing any .githooks/, token-gate, or premerge file in a repository that follows this convention, since those files are canonical copies managed here. Excludes remote CI cost judgment (remote-ci-economics) and agent-facing output compaction design (token-efficient-gates).'
+name: lifecycle-gate-policy
+description: 'Canonical local development-lifecycle gate policy for solo, agent-driven repositories with no remote-CI enforcement: pre-commit secret scan + autofix, static-only pre-push, full premerge verify+e2e, and agent self-merge with mechanical gate-integrity protection — the local substitute for what remote CI and branch protection would otherwise enforce. Ships canonical .githooks/ and premerge/token-gate templates with a hash-based drift audit so N repos share one answer instead of drifting independently. Use whenever the user asks to review, compare, unify, audit, standardize, or set up a repository''s development gates, git hooks, verify chains, merge or self-merge policy, premerge gates, or worktree conventions — and before hand-editing any .githooks/, token-gate, or premerge file in a repository that follows this convention, since those files are canonical copies managed here. Stops at merge into the default branch; does not cover deploy-time gating. Excludes remote CI cost judgment (remote-ci-economics) and generic agent-facing output compaction (token-efficient-gates) — cross-references their conclusions but ships nothing that requires either to be present.'
 ---
 
-# Harness Conventions
+# Lifecycle Gate Policy
 
 One policy, many repositories. This skill holds the canonical rules, the canonical
 file templates, and a drift audit. Repositories carry **copies** of the templates —
@@ -18,10 +18,10 @@ template installed into each repo's AGENTS.md). Summary:
 |---|---|---|
 | `.githooks/pre-commit` | commit | gitleaks + biome auto-fix on staged files |
 | `.githooks/pre-push` | push | `pnpm verify:static` — static checks only, token-gated |
-| `scripts/premerge.sh` | before squash merge | sync check → gate-integrity check → cross-model review requirement → full `pnpm verify` → e2e |
+| `scripts/premerge.sh` | before squash merge | sync check → gate-integrity check → review requirement → full `pnpm verify` → e2e |
 
 Self-merge: the authoring agent may merge its own PR when `premerge.sh` passes
-(including `--review-done` after a clean `orca-review-gate` run for code changes).
+(including `--review-done` after a clean review pass for code changes).
 `premerge.sh` exits `PROTECTED` when the PR touches gate-integrity paths
 (`.githooks/`, premerge/token-gate scripts, biome config, root package.json
 `scripts`) — those PRs are merged by a human. The design rule behind all of this:
@@ -79,13 +79,18 @@ Audit first; apply only when the user asks. One repository per commit. Steps:
 
 ## Boundaries
 
+Every sibling-skill mention below is a citation of rationale, not a runtime
+dependency: the deployed templates (`.githooks/*`, `premerge.sh`, `token-gate.sh`,
+`agents-policy.md`) and `scripts/audit.py` work correctly even if neither sibling
+skill is installed.
+
 - **token-efficient-gates** owns agent-facing output economics; its `capture.py` is
   for ad-hoc agent runs, while the `token-gate.sh` template here is the persistent
   in-repo adapter. Keep their design constraints (PASS one-liner, bounded indexes).
 - **remote-ci-economics** owns whether remote CI should exist at all; this skill
   only reports workflow presence.
-- **orca-review-gate** executes the cross-model review that `premerge.sh` requires
-  for code changes; this skill defines *when* it is required, not how it runs.
+- This skill defines *when* a review pass is required (`--review-done`) for code
+  changes; it is agnostic to what fills that signal.
 - **superpowers** skills (finishing-a-development-branch, using-git-worktrees) stay
   useful as generic procedure; the AGENTS.md policy template supplies the declared
   preferences (worktree location, merge choice) those skills ask about.
